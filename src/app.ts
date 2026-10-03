@@ -45,7 +45,7 @@ export function buildApp(db: Database): FastifyInstance {
     if (error instanceof ZodError) {
       return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Request validation failed.', details: error.issues.map(({ path, message }) => ({ path, message })) } });
     }
-    if ('statusCode' in error && error.statusCode === 400) {
+    if (isBadRequestError(error)) {
       return reply.code(400).send({ error: { code: 'BAD_REQUEST', message: 'The request could not be parsed.' } });
     }
     requestSafeLog(app, error);
@@ -70,6 +70,10 @@ export function buildApp(db: Database): FastifyInstance {
   return app;
 }
 
-function requestSafeLog(app: FastifyInstance, error: Error): void {
+function isBadRequestError(error: unknown): error is { statusCode: 400 } {
+  return typeof error === 'object' && error !== null && 'statusCode' in error && error.statusCode === 400;
+}
+
+function requestSafeLog(app: FastifyInstance, error: unknown): void {
   app.log.error({ err: error }, 'Request failed');
 }

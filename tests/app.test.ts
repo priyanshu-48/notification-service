@@ -27,7 +27,7 @@ describe('POST /v1/notifications', () => {
   });
 
   it('validates input and persists using tenant from authenticated key', async () => {
-    const { db, insertValues } = fakeDb();
+    const { db } = fakeDb();
     const app = buildApp(db);
     const response = await app.inject({ method: 'POST', url: '/v1/notifications', headers: { authorization: `Bearer ${apiKey}` }, payload: {
       userId: '00000000-0000-4000-8000-000000000002', type: 'reminder', payload: { message: 'Take a break' }, tenantId: 'attacker-tenant',
