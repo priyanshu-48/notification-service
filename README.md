@@ -1,6 +1,57 @@
 # Real-Time Notification Service
 
-Multi-tenant notification API with durable PostgreSQL persistence, BullMQ delivery, and email templates.
+A small, self-hostable notification service in the spirit of Knock or OneSignal. Other apps call its API to notify their users over **email** and **in-app real-time (WebSocket)**, with a durable inbox, retries and a dead-letter set, idempotency, per-tenant rate limiting, user preferences (opt-outs, quiet hours), digests, and a dashboard. Built with Node.js, TypeScript, Fastify, PostgreSQL, Redis and BullMQ.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Backend["Your backend<br/>SDK + API key"] -->|"POST /v1/notifications<br/>Idempotency-Key"| API
+  Browser["Browser / extension<br/>stream token"] <-->|"WebSocket /stream"| API
+  Dash["React dashboard<br/>API key"] --> API
+
+  subgraph Service["One image: API + worker"]
+    API["API + WebSocket gateway<br/>(Fastify)"]
+    Worker["Worker (BullMQ)<br/>+ sweeper"]
+  end
+
+  API -->|"1. commit"| PG[("PostgreSQL<br/>notifications, attempts,<br/>preferences")]
+  API -->|"2. enqueue<br/>jobId = notification id"| Redis[("Redis<br/>queue, pub/sub,<br/>rate-limit buckets")]
+  Redis --> Worker
+  Worker -->|"claim, record attempts"| PG
+  Worker -->|"email<br/>Idempotency-Key"| Email["Resend / mock"]
+  Worker -->|"publish user:{id}"| Redis
+  Redis -->|"subscribe"| API
+  Worker -.->|"re-enqueue stuck rows"| Redis
+```
+
+Postgres is the source of truth; Redis carries work and live messages and can be lost without losing a notification, because the sweeper rebuilds the queue from Postgres. The API and worker can run as one process (the Render free-tier setup) or as separate processes.
+
+### Life of a notification
+
+```mermaid
+sequenceDiagram
+  participant C as Your backend (SDK)
+  participant A as API
+  participant P as Postgres
+  participant Q as Redis queue
+  participant W as Worker
+  participant E as Email provider
+  participant U as User's browser
+  C->>A: POST /v1/notifications (Idempotency-Key)
+  A->>P: insert (a repeated key returns the original)
+  A->>Q: add job (jobId = notification id)
+  A-->>C: 201 queued
+  Q->>W: job
+  W->>P: claim queued to sending, read preferences
+  W->>E: send (Idempotency-Key = id:email)
+  W->>Q: publish user:{id} (in-app)
+  Q-->>A: message
+  A-->>U: WebSocket push
+  W->>P: record attempts, mark delivered
+```
+
+Failures take a different path: a transient error returns the notification to `queued` and BullMQ retries with exponential backoff; a permanent error or the fifth failed attempt moves it to `failed` (the dead-letter set), from where it can be replayed. See [Reliability](#reliability) and [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Requirements
 
@@ -81,6 +132,38 @@ A React dashboard (overview counts, notification log with per-attempt detail and
 **Rate limiting:** each tenant has a Redis token bucket (`RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_BURST`) shared by all API instances. Over the limit returns `429` with `Retry-After`. If Redis is unreachable the limiter fails open.
 
 `tests/chaos.integration.test.ts` kills a real worker process mid-send with 20 notifications in flight and asserts all 20 are delivered, none lost, none sent twice.
+
+## Benchmarks
+
+What was measured, how, and what it does **not** show. The k6 script is [loadtest/notifications.js](loadtest/notifications.js) and the whole procedure is [loadtest/run-local.sh](loadtest/run-local.sh), so every number below can be reproduced.
+
+**Method.** The production Docker image runs API and worker in one process, as on Render (`RUN_WORKER=true`, concurrency 10), against a throwaway Postgres database and Redis in Docker. k6 sends `POST /v1/notifications` at a fixed arrival rate for 60 seconds (each notification goes to email and in-app, using the mock email channel so no provider is hit), then waits until every notification is delivered. "Accepted" means the API returned `201`. "Delivered" is counted from Postgres.
+
+**Hardware.** Intel Core i7-12700H laptop (14 cores, 20 threads), 15.7 GB RAM, Windows 11, Docker Desktop (20 vCPUs, 8 GB). The app container was either uncapped or limited to `--cpus=0.1 --memory=512m`, which is Render's free instance size. Postgres and Redis were uncapped containers on the same machine, so there is no network latency between them and the app.
+
+| Container | Arrival rate | Accepted / delivered | Lost or failed | API p95 latency | Notes |
+|---|---|---|---|---|---|
+| uncapped | 100/s (6,000/min) | 6,000 / 6,000 | 0 | 15 ms | kept up |
+| uncapped | 200/s (12,000/min) | 12,001 / 12,001 | 0 | 18 ms | kept up |
+| uncapped | 300/s (18,000/min) | 18,001 / 18,001 | 0 | 24 ms | kept up; ceiling not reached |
+| 0.1 CPU, 512 MB | 10/s (600/min) | 600 / 600 | 0 | 879 ms | |
+| 0.1 CPU, 512 MB | 20/s (1,200/min) | 1,201 / 1,201 | 0 | 1.46 s | everything delivered by the end of the run |
+| 0.1 CPU, 512 MB | 40/s (2,400/min) | 2,242 / 2,242 (of 2,400 offered) | 0 | 5.5 s | overloaded: only 2,242 of the 2,400 offered requests were sent (cause not investigated), and the queue took until 128 s to drain |
+
+**What this shows.**
+- On an unconstrained machine one process sustained **18,000 notifications per minute** end to end with a 24 ms p95 and nothing lost. The test never found its limit; the load generator shares the same machine.
+- On a Render-free-sized CPU allocation the system handles about **1,000 notifications per minute** (roughly 17 per second) before latency degrades, with API and worker sharing that one 0.1 CPU. Overload showed up as latency and a slower drain, **never as lost or failed notifications**.
+- The crash test in [tests/chaos.integration.test.ts](tests/chaos.integration.test.ts) separately shows no loss or duplication when a worker is killed mid-send.
+
+**What it does not show.**
+- It is not a measurement of a real Render instance. The 0.1 CPU container is an emulation, Render's free instances are also throttled and may have noisy neighbours, and Postgres and Redis there are separate hosts. Expect worse numbers on Render; measure there before quoting any.
+- "5,000 notifications per minute on a free-tier instance" is **not** supported by these results. That rate needed more than the 0.1 CPU allocation.
+- The mock email channel is instant. Against a real provider, throughput is bounded by the provider's latency and rate limits (raise `WORKER_CONCURRENCY` to compensate).
+- Single run per row, 60 seconds each; no confidence intervals.
+
+## Deploying
+
+A Render Blueprint ([render.yaml](render.yaml)) and a guide with the free-tier limits are in [docs/DEPLOY.md](docs/DEPLOY.md). `GET /ready` checks Postgres and Redis, and `GET /metrics` exposes Prometheus metrics (token-protected).
 
 ## Known limitations
 
