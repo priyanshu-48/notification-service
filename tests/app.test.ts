@@ -12,7 +12,7 @@ function fakeDb() {
     .mockResolvedValueOnce([{ tenantId: '00000000-0000-4000-8000-000000000001', keyHash: hashApiKey(apiKey) }])
     .mockResolvedValueOnce([{ id: '00000000-0000-4000-8000-000000000002' }]);
   const select = vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where, limit }) });
-  const insert = vi.fn().mockReturnValue({ values: insertValues, returning });
+  const insert = vi.fn().mockReturnValue({ values: insertValues, returning, onConflictDoNothing: vi.fn().mockReturnThis() });
   return { db: { select, insert } as never, insertValues, select };
 }
 

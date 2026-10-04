@@ -51,7 +51,7 @@ describe('real-time stream and offline inbox', () => {
 
     // Two independent gateway instances sharing only Postgres and Redis.
     for (let i = 0; i < 2; i++) {
-      const app = buildApp(db, queue, { secret, subscriber: new Redis(redisOptions) });
+      const app = buildApp(db, queue, { stream: { secret, subscriber: new Redis(redisOptions) } });
       await app.listen({ port: 0, host: '127.0.0.1' });
       apps.push(app);
       ports.push((app.server.address() as { port: number }).port);

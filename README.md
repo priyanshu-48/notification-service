@@ -45,6 +45,27 @@ Open `/demo` in a browser, paste a token, and send notifications to watch them a
 
 Successful creation returns `201` with `id`, `status: "queued"`, and `createdAt`. Errors use `{ "error": { "code": "...", "message": "..." } }`; malformed input returns `400`, missing/invalid credentials `401`, and a user not found within the tenant `422`.
 
-## Current boundary
+## Reliability
 
-Notifications are committed before enqueueing. If enqueueing fails, the API returns `503` with the saved notification ID and leaves its status `queued`; Phase 4 will add recovery through an outbox or sweeper. Phase 3 stream gateways have no heartbeat or per-connection limit yet, and a failed channel marks the whole notification `failed` until Phase 4 adds per-channel retry. Phase 2 uses BullMQ defaults and does not implement application retries, a dead-letter queue, or rate limiting. A worker claims only queued notifications, records each channel attempt, and skips notifications it cannot claim.
+**Delivery guarantee: at-least-once processing, effectively-once delivery.** A notification is never dropped by a crash, restart or provider outage, and a crash can at worst cause a repeat *attempt*, which is deduplicated so the recipient sees it once. Three layers provide this:
+
+1. **Claim and skip:** the worker claims a notification (`queued`/`sending` to `sending`) and records a `sent` attempt per channel. Retries and crash redeliveries skip channels already sent.
+2. **Provider idempotency key:** every email is sent with `Idempotency-Key: <notificationId>:email`, so a crash between "provider accepted" and "we recorded it" cannot produce a second email on providers that honour the header (Resend does, for 24 hours). In-app items are keyed by notification id, which the client dedupes on.
+3. **Idempotent API:** send `Idempotency-Key: <your key>` on `POST /v1/notifications`. A repeated call returns the original notification with `200` and `Idempotent-Replayed: true`; the same key with a different body returns `422 IDEMPOTENCY_KEY_REUSED`.
+
+**Retries:** transient failures are retried up to 5 attempts with exponential backoff (1s, 2s, 4s, ...) and 50% jitter. Permanent failures (no recipient email, missing template, provider 4xx other than 408/429) skip retries.
+
+**Dead letters:** a notification that fails permanently or exhausts its attempts ends as `failed`. `GET /v1/dead-letters` lists them, `GET /v1/notifications/:id` shows status and every delivery attempt with its error, and `POST /v1/notifications/:id/replay` re-queues one (`202`; `409` if it is not failed).
+
+**Crashes and the enqueue gap:** a killed worker's job is redelivered by BullMQ after its lock expires, and the next worker takes over the half-sent notification. Notifications committed but never enqueued (the `503` case, or lost Redis data) are re-enqueued by a sweeper that runs in every worker (`queued`/`sending` and untouched for 60s; re-adding is a no-op while a job is live). Workers shut down gracefully on SIGTERM, finishing in-flight jobs first.
+
+**Rate limiting:** each tenant has a Redis token bucket (`RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_BURST`) shared by all API instances. Over the limit returns `429` with `Retry-After`. If Redis is unreachable the limiter fails open.
+
+`tests/chaos.integration.test.ts` kills a real worker process mid-send with 20 notifications in flight and asserts all 20 are delivered, none lost, none sent twice.
+
+## Known limitations
+
+- Exactly-once delivery is not claimed. A provider without idempotency keys could repeat an email after a crash in the window between acceptance and our record; this is the usual at-least-once trade-off.
+- Retries are per notification, not per channel: a failing channel is retried alongside the others, but channels that already succeeded are skipped.
+- Stream gateways have no heartbeat or per-connection limit yet, and stream tokens cannot be revoked before they expire.
+- Notifications are committed before enqueueing; if enqueueing fails the API returns `503` with the saved ID, and the client's retry (same Idempotency-Key) or the sweeper recovers it.

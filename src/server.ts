@@ -3,6 +3,7 @@ import { buildApp } from './app.js';
 import { createDatabase } from './db/client.js';
 import { createNotificationQueue } from './queue.js';
 import { Redis } from 'ioredis';
+import { createRateLimiter } from './rate-limit.js';
 
 const { db, pool } = createDatabase();
 const { queue, connection } = createNotificationQueue();
@@ -10,7 +11,13 @@ const secret = process.env.STREAM_TOKEN_SECRET;
 if (!secret || secret.length < 32) throw new Error('STREAM_TOKEN_SECRET must be set to at least 32 characters');
 // pub/sub needs its own connection: a subscribed Redis client cannot issue other commands
 const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
-const app = buildApp(db, queue, { secret, subscriber });
+// Dedicated fail-fast connection: with the queue connection's unlimited retries, a Redis outage would hang requests instead of failing open.
+const limiterRedis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: 1, enableOfflineQueue: false });
+const rateLimiter = createRateLimiter(limiterRedis, {
+  perMinute: Number(process.env.RATE_LIMIT_PER_MINUTE ?? 600),
+  burst: Number(process.env.RATE_LIMIT_BURST ?? 100),
+});
+const app = buildApp(db, queue, { stream: { secret, subscriber }, rateLimiter });
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '0.0.0.0';
 
@@ -21,6 +28,7 @@ try {
   await pool.end();
   await queue.close();
   await connection.quit();
+  await limiterRedis.quit();
   process.exitCode = 1;
 }
 
@@ -29,6 +37,7 @@ async function shutdown(signal: string) {
   await app.close();
   await queue.close();
   await connection.quit();
+  await limiterRedis.quit();
   await pool.end();
 }
 

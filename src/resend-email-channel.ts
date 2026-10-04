@@ -1,4 +1,4 @@
-import type { Channel, EmailMessage } from './channel.js';
+import { PermanentDeliveryError, type Channel, type EmailMessage } from './channel.js';
 import { MockEmailChannel } from './mock-email-channel.js';
 
 export class ResendEmailChannel implements Channel {
@@ -9,10 +9,18 @@ export class ResendEmailChannel implements Channel {
   async send(message: EmailMessage): Promise<void> {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`, 'Content-Type': 'application/json',
+        ...(message.idempotencyKey ? { 'Idempotency-Key': message.idempotencyKey } : {}),
+      },
       body: JSON.stringify({ from: this.from, to: [message.to], subject: message.subject, html: message.html }),
+      signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) throw new Error(`Resend email request failed with status ${response.status}`);
+    if (response.ok) return;
+    const error = `Resend email request failed with status ${response.status}`;
+    // 4xx means our request is wrong, so retrying cannot help; 408/429 and 5xx are transient.
+    if (response.status < 500 && response.status !== 408 && response.status !== 429) throw new PermanentDeliveryError(error);
+    throw new Error(error);
   }
 }
 

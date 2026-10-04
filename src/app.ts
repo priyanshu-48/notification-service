@@ -1,17 +1,19 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { z, ZodError } from 'zod';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type * as schema from './db/schema.js';
-import { apiKeys, notifications, templates, users } from './db/schema.js';
+import { apiKeys, deliveryAttempts, notifications, templates, users } from './db/schema.js';
 import { hashApiKey, hashesMatch } from './auth/key.js';
-import type { NotificationQueue } from './queue.js';
+import { enqueueNotification, type NotificationQueue } from './queue.js';
 import { missingTemplateVariables } from './templates.js';
 import { createStreamToken } from './stream-token.js';
 import { listInbox, markRead } from './inbox.js';
 import { registerStream } from './realtime.js';
 import type { Redis } from 'ioredis';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import type { RateLimiter } from './rate-limit.js';
 
 type Database = NodePgDatabase<typeof schema>;
 declare module 'fastify' {
@@ -42,7 +44,21 @@ export interface StreamOptions { secret: string; subscriber: Redis }
 
 const demoPage = readFileSync(new URL('../public/demo.html', import.meta.url), 'utf8');
 
-export function buildApp(db: Database, queue: NotificationQueue, stream?: StreamOptions): FastifyInstance {
+export interface AppOptions { stream?: StreamOptions; rateLimiter?: RateLimiter }
+
+// Key-order-independent JSON, so the same request body always fingerprints the same.
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+const idempotencyKeyHeader = z.string().min(1).max(255).optional();
+const notFound = { error: { code: 'NOT_FOUND', message: 'The notification does not exist for this tenant.' } };
+
+export function buildApp(db: Database, queue: NotificationQueue, { stream, rateLimiter }: AppOptions = {}): FastifyInstance {
   const app = Fastify({
     logger: {
       // The stream token travels in the query string, so keep it out of the logs.
@@ -65,6 +81,15 @@ export function buildApp(db: Database, queue: NotificationQueue, stream?: Stream
       return reply.code(401).send(apiError(401, 'UNAUTHORIZED', 'A valid API key is required.').body);
     }
     request.tenantId = record.tenantId;
+
+    if (rateLimiter) {
+      // Fail open: a Redis outage should not take the API down with it.
+      const limit = await rateLimiter.take(record.tenantId).catch((err) => { request.log.warn({ err }, 'rate limiter unavailable'); return null; });
+      if (limit && !limit.allowed) {
+        return reply.code(429).header('Retry-After', String(limit.retryAfterSeconds))
+          .send(apiError(429, 'RATE_LIMITED', 'Too many requests for this tenant.').body);
+      }
+    }
   });
 
   app.setErrorHandler((error, _request, reply) => {
@@ -98,19 +123,80 @@ export function buildApp(db: Database, queue: NotificationQueue, stream?: Stream
       if (missing.length) return reply.code(422).send({ error: { code: 'MISSING_TEMPLATE_VARIABLES', message: `Missing required template variables: ${missing.join(', ')}.` } });
     }
 
-    const [notification] = await db.insert(notifications).values({
+    const idempotencyKey = idempotencyKeyHeader.parse(request.headers['idempotency-key']) ?? null;
+    const requestHash = createHash('sha256').update(canonicalJson(input)).digest('hex');
+    const returning = { id: notifications.id, status: notifications.status, createdAt: notifications.createdAt };
+    let [notification] = await db.insert(notifications).values({
       tenantId, userId: user.id, type: input.type, payload: input.payload, status: 'queued',
       templateName: template?.name ?? null,
       templateVariables: template ? variables : null,
       channels: [...new Set(input.channels)],
-    }).returning({ id: notifications.id, status: notifications.status, createdAt: notifications.createdAt });
+      idempotencyKey, requestHash,
+    }).onConflictDoNothing({ target: [notifications.tenantId, notifications.idempotencyKey] }).returning(returning);
+
+    let replayed = false;
+    if (!notification) {
+      // Only reachable with an Idempotency-Key: a duplicate call returns the original notification instead of sending again.
+      const [existing] = await db.select({ ...returning, requestHash: notifications.requestHash }).from(notifications)
+        .where(and(eq(notifications.tenantId, tenantId), eq(notifications.idempotencyKey, idempotencyKey!))).limit(1);
+      if (!existing) return reply.code(409).send({ error: { code: 'IDEMPOTENCY_CONFLICT', message: 'Please retry the request.' } });
+      if (existing.requestHash !== requestHash) {
+        return reply.code(422).send({ error: { code: 'IDEMPOTENCY_KEY_REUSED', message: 'This Idempotency-Key was already used with a different request.' } });
+      }
+      notification = existing;
+      replayed = true;
+      reply.header('Idempotent-Replayed', 'true');
+      // Still `queued` means the original call may have failed to enqueue (503); re-adding is safe because jobId is the notification id.
+      if (existing.status !== 'queued') return reply.code(200).send({ id: existing.id, status: existing.status, createdAt: existing.createdAt });
+    }
     try {
-      await queue.add('deliver-notification', { notificationId: notification!.id });
+      await enqueueNotification(queue, notification!.id);
     } catch (error) {
       request.log.error({ err: error, notificationId: notification!.id }, 'Notification persisted but enqueue failed');
       return reply.code(503).send({ id: notification!.id, error: { code: 'QUEUE_UNAVAILABLE', message: `Notification ${notification!.id} was saved as queued but could not be enqueued.` } });
     }
-    return reply.code(201).send({ id: notification!.id, status: notification!.status, createdAt: notification!.createdAt });
+    return reply.code(replayed ? 200 : 201).send({ id: notification!.id, status: notification!.status, createdAt: notification!.createdAt });
+  });
+
+  app.get('/v1/notifications/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
+    const tenantId = request.tenantId!;
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const [notification] = await db.select({
+      id: notifications.id, type: notifications.type, status: notifications.status, channels: notifications.channels,
+      attempts: notifications.attempts, createdAt: notifications.createdAt, updatedAt: notifications.updatedAt,
+    }).from(notifications).where(and(eq(notifications.id, id), eq(notifications.tenantId, tenantId))).limit(1);
+    if (!notification) return reply.code(404).send(notFound);
+    const attempts = await db.select({ channel: deliveryAttempts.channel, status: deliveryAttempts.status, error: deliveryAttempts.error, attemptedAt: deliveryAttempts.attemptedAt })
+      .from(deliveryAttempts).where(eq(deliveryAttempts.notificationId, id)).orderBy(deliveryAttempts.attemptedAt);
+    return reply.code(200).send({ ...notification, deliveryAttempts: attempts });
+  });
+
+  // The dead-letter set is the `failed` status: delivery was abandoned (permanent error or retries exhausted) and awaits replay.
+  app.get('/v1/dead-letters', async (request: FastifyRequest, reply) => {
+    const results = await db.select({ id: notifications.id, type: notifications.type, attempts: notifications.attempts, failedAt: notifications.updatedAt })
+      .from(notifications).where(and(eq(notifications.tenantId, request.tenantId!), eq(notifications.status, 'failed')))
+      .orderBy(desc(notifications.updatedAt)).limit(100);
+    return reply.code(200).send({ notifications: results });
+  });
+
+  app.post('/v1/notifications/:id/replay', async (request: FastifyRequest<{ Params: { id: string } }>, reply) => {
+    const tenantId = request.tenantId!;
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const [replayed] = await db.update(notifications).set({ status: 'queued', attempts: 0, updatedAt: sql`now()` })
+      .where(and(eq(notifications.id, id), eq(notifications.tenantId, tenantId), eq(notifications.status, 'failed'))).returning({ id: notifications.id });
+    if (!replayed) {
+      const [existing] = await db.select({ id: notifications.id }).from(notifications).where(and(eq(notifications.id, id), eq(notifications.tenantId, tenantId))).limit(1);
+      return existing
+        ? reply.code(409).send({ error: { code: 'NOT_REPLAYABLE', message: 'Only failed notifications can be replayed.' } })
+        : reply.code(404).send(notFound);
+    }
+    try {
+      await enqueueNotification(queue, id);
+    } catch (error) {
+      request.log.error({ err: error, notificationId: id }, 'Replay persisted but enqueue failed');
+      return reply.code(503).send({ id, error: { code: 'QUEUE_UNAVAILABLE', message: 'The notification was re-queued and will be picked up by the sweeper.' } });
+    }
+    return reply.code(202).send({ id, status: 'queued' });
   });
 
   app.put('/v1/users/:externalUserId', async (request: FastifyRequest<{ Params: { externalUserId: string }; Body: { email: string } }>, reply) => {

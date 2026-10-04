@@ -6,6 +6,8 @@ describe('notification state machine', () => {
     ['queued', 'sending'],
     ['sending', 'delivered'],
     ['sending', 'failed'],
+    ['sending', 'queued'],
+    ['failed', 'queued'],
   ] as const)('allows %s -> %s', (from, to) => {
     expect(() => assertLegalTransition(from, to)).not.toThrow();
   });
@@ -13,7 +15,7 @@ describe('notification state machine', () => {
   it.each([
     ['queued', 'delivered'],
     ['queued', 'failed'],
-    ['sending', 'queued'],
+    ['delivered', 'queued'],
     ['delivered', 'sending'],
     ['failed', 'sending'],
   ] as const)('rejects %s -> %s', (from, to) => {

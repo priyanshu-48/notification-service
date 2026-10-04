@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, text, timestamp, uuid, uniqueIndex, index, jsonb, boolean } from 'drizzle-orm/pg-core';
+import { pgEnum, pgTable, text, timestamp, uuid, uniqueIndex, index, jsonb, boolean, integer } from 'drizzle-orm/pg-core';
 
 export const notificationStatus = pgEnum('notification_status', ['queued', 'sending', 'delivered', 'failed']);
 export const deliveryStatus = pgEnum('delivery_status', ['pending', 'sent', 'failed']);
@@ -55,11 +55,15 @@ export const notifications = pgTable('notifications', {
   channels: jsonb('channels').$type<Array<'email' | 'in_app'>>().notNull().default(['email']),
   status: notificationStatus('status').notNull().default('queued'),
   idempotencyKey: text('idempotency_key'),
+  requestHash: text('request_hash'),
+  attempts: integer('attempts').notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   readAt: timestamp('read_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex('notifications_tenant_idempotency_key_idx').on(table.tenantId, table.idempotencyKey),
   index('notifications_user_created_at_idx').on(table.userId, table.createdAt),
+  index('notifications_status_updated_at_idx').on(table.status, table.updatedAt),
   index('notifications_tenant_created_at_idx').on(table.tenantId, table.createdAt),
 ]);
 
