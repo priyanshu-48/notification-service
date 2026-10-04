@@ -12,7 +12,9 @@ import { listInbox, markRead } from './inbox.js';
 import { registerStream } from './realtime.js';
 import { registerManagementRoutes } from './management-routes.js';
 import type { Redis } from 'ioredis';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import fastifyStatic from '@fastify/static';
 import { createHash } from 'node:crypto';
 import type { RateLimiter } from './rate-limit.js';
 
@@ -255,6 +257,10 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
   });
 
   registerManagementRoutes(app, db);
+
+  // The built dashboard (npm run dashboard:build) is served at /dashboard/; skipped when it hasn't been built.
+  const dashboardRoot = fileURLToPath(new URL('../dashboard/dist', import.meta.url));
+  if (existsSync(dashboardRoot)) void app.register(fastifyStatic, { root: dashboardRoot, prefix: '/dashboard/', redirect: true });
 
   if (stream) {
     // The tenant backend mints a short-lived token for its end user; the browser uses it to open /stream.
