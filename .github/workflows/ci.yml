@@ -26,5 +26,5 @@ jobs:
       - run: npm install
       - run: npm run lint
       - run: npm run build
-      - run: npm run sdk:build
       - run: npm test
+      - run: npm run sdk:build

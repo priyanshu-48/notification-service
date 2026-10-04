@@ -9,9 +9,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "sdk:build": "npm --prefix sdk install && npm --prefix sdk run build",
     "start": "node dist/server.js",
     "worker": "tsx src/worker.ts",
+    "sdk:build": "npm --prefix sdk install && npm --prefix sdk run build",
     "provision:tenant": "tsx src/scripts/provision-tenant.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
