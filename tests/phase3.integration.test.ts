@@ -46,7 +46,7 @@ describe('real-time stream and offline inbox', () => {
     const workerConnection = new Redis({ ...redisOptions, maxRetriesPerRequest: null });
     const publisher = createRedisPublisher(workerConnection);
     worker = new Worker(notificationQueueName, async (job) => {
-      await processNotification(db, new MockEmailChannel(), job.data.notificationId as string, publisher);
+      await processNotification(db, new MockEmailChannel(), job.data.notificationId as string, { publisher });
     }, { connection: workerConnection.duplicate() });
 
     // Two independent gateway instances sharing only Postgres and Redis.

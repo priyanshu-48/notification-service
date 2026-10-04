@@ -109,7 +109,7 @@ describe('reliability: retries, dead letters, idempotency, rate limiting, recove
     let calls = 0;
     behaviour = async () => { if (++calls <= 2) throw new Error('provider 503'); };
     const id = await create();
-    await enqueueNotification(queue, id, fastRetry);
+    await enqueueNotification(queue, id, { retry: fastRetry });
     await until(async () => (await row(id)).status === 'delivered');
     const attempts = await attemptsOf(id);
     expect(attempts.map((a) => a.status).sort()).toEqual(['failed', 'failed', 'sent']);
@@ -120,7 +120,7 @@ describe('reliability: retries, dead letters, idempotency, rate limiting, recove
   it('dead-letters a permanent failure immediately, lists it, and replays it', async () => {
     behaviour = async () => { throw new PermanentDeliveryError('mailbox does not exist'); };
     const id = await create();
-    await enqueueNotification(queue, id, fastRetry);
+    await enqueueNotification(queue, id, { retry: fastRetry });
     await until(async () => (await row(id)).status === 'failed');
     expect((await row(id)).attempts).toBe(1); // no retries for a permanent error
 
@@ -142,7 +142,7 @@ describe('reliability: retries, dead letters, idempotency, rate limiting, recove
   it('dead-letters after exhausting all attempts', async () => {
     behaviour = async () => { throw new Error('provider down'); };
     const id = await create();
-    await enqueueNotification(queue, id, fastRetry);
+    await enqueueNotification(queue, id, { retry: fastRetry });
     await until(async () => (await row(id)).status === 'failed');
     expect((await row(id)).attempts).toBe(5);
     expect((await attemptsOf(id)).filter((a) => a.status === 'failed')).toHaveLength(5);

@@ -5,6 +5,7 @@
     { "idx": 0, "version": "7", "when": 1790990000000, "tag": "0000_initial", "breakpoints": true },
     { "idx": 1, "version": "7", "when": 1791025000000, "tag": "0001_phase2", "breakpoints": true },
     { "idx": 2, "version": "7", "when": 1791110000000, "tag": "0002_phase3", "breakpoints": true },
-    { "idx": 3, "version": "7", "when": 1791120000000, "tag": "0003_phase4", "breakpoints": true }
+    { "idx": 3, "version": "7", "when": 1791120000000, "tag": "0003_phase4", "breakpoints": true },
+    { "idx": 4, "version": "7", "when": 1791130000000, "tag": "0004_phase5", "breakpoints": true }
   ]
 }

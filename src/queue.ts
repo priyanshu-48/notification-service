@@ -15,8 +15,10 @@ export interface NotificationQueue {
 
 // jobId = notification id makes enqueueing idempotent while a job is live, so the sweeper and client retries can re-add safely.
 // Finished jobs are removed so a replay of the same notification can be enqueued again.
-export function enqueueNotification(queue: NotificationQueue, notificationId: string, retry: object = defaultRetry) {
-  return queue.add('deliver-notification', { notificationId }, { jobId: notificationId, removeOnComplete: true, removeOnFail: true, ...retry });
+export function enqueueNotification(queue: NotificationQueue, notificationId: string, { retry = defaultRetry as object, delayMs = 0 } = {}) {
+  return queue.add('deliver-notification', { notificationId }, {
+    jobId: notificationId, removeOnComplete: true, removeOnFail: true, ...retry, ...(delayMs > 0 ? { delay: delayMs } : {}),
+  });
 }
 
 export function createNotificationQueue(): { queue: Queue; connection: Redis } {

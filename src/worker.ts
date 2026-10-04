@@ -6,16 +6,13 @@ import { createEmailChannel } from './resend-email-channel.js';
 import { notificationQueueName } from './queue.js';
 import { sweepStuckNotifications } from './sweeper.js';
 import { createRedisPublisher } from './realtime.js';
-import { processNotification } from './worker-service.js';
+import { createJobHandler } from './worker-service.js';
 
 const { db, pool } = createDatabase();
 const connection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: null });
 const channel = createEmailChannel();
 const publisher = createRedisPublisher(connection);
-const worker = new Worker(notificationQueueName, async (job) => {
-  if (typeof job.data.notificationId !== 'string') throw new Error('Invalid notification job');
-  await processNotification(db, channel, job.data.notificationId, publisher);
-}, { connection, maxStalledCount: 3 });
+const worker = new Worker(notificationQueueName, createJobHandler(db, channel, publisher), { connection, maxStalledCount: 3 });
 const queue = new Queue(notificationQueueName, { connection });
 
 // Every worker sweeps; duplicate enqueues collapse on jobId.

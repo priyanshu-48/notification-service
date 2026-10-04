@@ -10,6 +10,7 @@ import { missingTemplateVariables } from './templates.js';
 import { createStreamToken } from './stream-token.js';
 import { listInbox, markRead } from './inbox.js';
 import { registerStream } from './realtime.js';
+import { registerManagementRoutes } from './management-routes.js';
 import type { Redis } from 'ioredis';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -27,6 +28,9 @@ const createNotification = z.object({
   templateName: z.string().trim().min(1).max(100).optional(),
   variables: z.record(z.unknown()).optional(),
   channels: z.array(z.enum(['email', 'in_app'])).min(1).default(['email']),
+  // Notifications sharing a digestKey for one user within the window are delivered as a single "N new ..." notification.
+  digestKey: z.string().trim().min(1).max(200).optional(),
+  digestWindowSeconds: z.number().int().min(10).max(86400).default(300),
 }).strict();
 
 const createTemplate = z.object({
@@ -124,6 +128,7 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
     }
 
     const idempotencyKey = idempotencyKeyHeader.parse(request.headers['idempotency-key']) ?? null;
+    const delayMs = input.digestKey ? input.digestWindowSeconds * 1000 : 0;
     const requestHash = createHash('sha256').update(canonicalJson(input)).digest('hex');
     const returning = { id: notifications.id, status: notifications.status, createdAt: notifications.createdAt };
     let [notification] = await db.insert(notifications).values({
@@ -132,6 +137,8 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
       templateVariables: template ? variables : null,
       channels: [...new Set(input.channels)],
       idempotencyKey, requestHash,
+      digestKey: input.digestKey ?? null,
+      deliverAfter: delayMs ? new Date(Date.now() + delayMs) : null,
     }).onConflictDoNothing({ target: [notifications.tenantId, notifications.idempotencyKey] }).returning(returning);
 
     let replayed = false;
@@ -150,7 +157,7 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
       if (existing.status !== 'queued') return reply.code(200).send({ id: existing.id, status: existing.status, createdAt: existing.createdAt });
     }
     try {
-      await enqueueNotification(queue, notification!.id);
+      await enqueueNotification(queue, notification!.id, { delayMs: replayed ? 0 : delayMs });
     } catch (error) {
       request.log.error({ err: error, notificationId: notification!.id }, 'Notification persisted but enqueue failed');
       return reply.code(503).send({ id: notification!.id, error: { code: 'QUEUE_UNAVAILABLE', message: `Notification ${notification!.id} was saved as queued but could not be enqueued.` } });
@@ -246,6 +253,8 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
     if (!await markRead(db, tenantId, user.id, id)) return reply.code(404).send({ error: { code: 'NOTIFICATION_NOT_FOUND', message: 'The notification does not exist for this user.' } });
     return reply.code(204).send();
   });
+
+  registerManagementRoutes(app, db);
 
   if (stream) {
     // The tenant backend mints a short-lived token for its end user; the browser uses it to open /stream.
