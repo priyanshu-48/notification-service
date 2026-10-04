@@ -22,7 +22,8 @@ declare module 'fastify' {
 }
 
 const createNotification = z.object({
-  userId: z.string().uuid(),
+  userId: z.string().uuid().optional(),
+  externalUserId: z.string().trim().min(1).max(255).optional(),
   type: z.string().trim().min(1).max(100),
   payload: z.record(z.unknown()),
   templateName: z.string().trim().min(1).max(100).optional(),
@@ -31,7 +32,7 @@ const createNotification = z.object({
   // Notifications sharing a digestKey for one user within the window are delivered as a single "N new ..." notification.
   digestKey: z.string().trim().min(1).max(200).optional(),
   digestWindowSeconds: z.number().int().min(10).max(86400).default(300),
-}).strict();
+}).strict().refine((v) => (v.userId === undefined) !== (v.externalUserId === undefined), { message: 'Provide exactly one of userId or externalUserId', path: ['userId'] });
 
 const createTemplate = z.object({
   name: z.string().trim().min(1).max(100),
@@ -112,7 +113,7 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
     if (!tenantId) return reply.code(401).send({ error: { code: 'UNAUTHORIZED', message: 'A valid API key is required.' } });
     const input = createNotification.parse(request.body);
     const [user] = await db.select({ id: users.id }).from(users)
-      .where(and(eq(users.id, input.userId), eq(users.tenantId, tenantId))).limit(1);
+      .where(and(input.userId ? eq(users.id, input.userId) : eq(users.externalUserId, input.externalUserId!), eq(users.tenantId, tenantId))).limit(1);
     if (!user) return reply.code(422).send({ error: { code: 'USER_NOT_FOUND', message: 'The user does not exist for this tenant.' } });
 
     let template: typeof templates.$inferSelect | undefined;
