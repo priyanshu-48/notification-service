@@ -50,6 +50,8 @@ export const notifications = pgTable('notifications', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   type: text('type').notNull(),
   payload: jsonb('payload').notNull(),
+  templateName: text('template_name'),
+  templateVariables: jsonb('template_variables').$type<Record<string, unknown>>(),
   status: notificationStatus('status').notNull().default('queued'),
   idempotencyKey: text('idempotency_key'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

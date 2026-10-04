@@ -19,7 +19,7 @@ function fakeDb() {
 describe('POST /v1/notifications', () => {
   it('requires a valid API key', async () => {
     const { db } = fakeDb();
-    const app = buildApp(db);
+    const app = buildApp(db, { add: vi.fn().mockResolvedValue({}) });
     const response = await app.inject({ method: 'POST', url: '/v1/notifications', payload: {} });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({ error: { code: 'UNAUTHORIZED' } });
@@ -28,7 +28,7 @@ describe('POST /v1/notifications', () => {
 
   it('validates input and persists using tenant from authenticated key', async () => {
     const { db } = fakeDb();
-    const app = buildApp(db);
+    const app = buildApp(db, { add: vi.fn().mockResolvedValue({}) });
     const response = await app.inject({ method: 'POST', url: '/v1/notifications', headers: { authorization: `Bearer ${apiKey}` }, payload: {
       userId: '00000000-0000-4000-8000-000000000002', type: 'reminder', payload: { message: 'Take a break' }, tenantId: 'attacker-tenant',
     } });
@@ -39,13 +39,25 @@ describe('POST /v1/notifications', () => {
 
   it('inserts a queued notification for authenticated tenant', async () => {
     const { db, insertValues } = fakeDb();
-    const app = buildApp(db);
+    const app = buildApp(db, { add: vi.fn().mockResolvedValue({}) });
     const response = await app.inject({ method: 'POST', url: '/v1/notifications', headers: { authorization: `Bearer ${apiKey}` }, payload: {
       userId: '00000000-0000-4000-8000-000000000002', type: 'reminder', payload: { message: 'Take a break' },
     } });
     expect(response.statusCode).toBe(201);
     expect(response.json()).toMatchObject({ status: 'queued' });
     expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ tenantId: '00000000-0000-4000-8000-000000000001', status: 'queued' }));
+    await app.close();
+  });
+
+  it('returns 503 with the saved notification ID when enqueueing fails', async () => {
+    const { db, insertValues } = fakeDb();
+    const app = buildApp(db, { add: vi.fn().mockRejectedValue(new Error('Redis unavailable')) });
+    const response = await app.inject({ method: 'POST', url: '/v1/notifications', headers: { authorization: `Bearer ${apiKey}` }, payload: {
+      userId: '00000000-0000-4000-8000-000000000002', type: 'reminder', payload: {},
+    } });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ id: '00000000-0000-4000-8000-000000000003', error: { code: 'QUEUE_UNAVAILABLE' } });
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ status: 'queued' }));
     await app.close();
   });
 });

@@ -3,8 +3,10 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { z, ZodError } from 'zod';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type * as schema from './db/schema.js';
-import { apiKeys, notifications, users } from './db/schema.js';
+import { apiKeys, notifications, templates, users } from './db/schema.js';
 import { hashApiKey, hashesMatch } from './auth/key.js';
+import type { NotificationQueue } from './queue.js';
+import { missingTemplateVariables } from './templates.js';
 
 type Database = NodePgDatabase<typeof schema>;
 declare module 'fastify' {
@@ -15,13 +17,22 @@ const createNotification = z.object({
   userId: z.string().uuid(),
   type: z.string().trim().min(1).max(100),
   payload: z.record(z.unknown()),
+  templateName: z.string().trim().min(1).max(100).optional(),
+  variables: z.record(z.unknown()).optional(),
+}).strict();
+
+const createTemplate = z.object({
+  name: z.string().trim().min(1).max(100),
+  subject: z.string().max(998).optional(),
+  body: z.string().min(1),
+  variables: z.array(z.string().regex(/^[a-zA-Z_][\w.-]*$/)).default([]),
 }).strict();
 
 function apiError(statusCode: number, code: string, message: string) {
   return { statusCode, body: { error: { code, message } } };
 }
 
-export function buildApp(db: Database): FastifyInstance {
+export function buildApp(db: Database, queue: NotificationQueue): FastifyInstance {
   const app = Fastify({ logger: true });
   app.decorateRequest('tenantId', null);
 
@@ -60,10 +71,55 @@ export function buildApp(db: Database): FastifyInstance {
       .where(and(eq(users.id, input.userId), eq(users.tenantId, tenantId))).limit(1);
     if (!user) return reply.code(422).send({ error: { code: 'USER_NOT_FOUND', message: 'The user does not exist for this tenant.' } });
 
+    let template: typeof templates.$inferSelect | undefined;
+    const variables = input.variables ?? {};
+    if (input.templateName) {
+      [template] = await db.select().from(templates).where(and(
+        eq(templates.tenantId, tenantId), eq(templates.name, input.templateName),
+      )).limit(1);
+      if (!template) return reply.code(422).send({ error: { code: 'TEMPLATE_NOT_FOUND', message: 'The template does not exist for this tenant.' } });
+      const required = template.variables as string[];
+      const missing = missingTemplateVariables(required, variables);
+      if (missing.length) return reply.code(422).send({ error: { code: 'MISSING_TEMPLATE_VARIABLES', message: `Missing required template variables: ${missing.join(', ')}.` } });
+    }
+
     const [notification] = await db.insert(notifications).values({
       tenantId, userId: user.id, type: input.type, payload: input.payload, status: 'queued',
+      templateName: template?.name ?? null,
+      templateVariables: template ? variables : null,
     }).returning({ id: notifications.id, status: notifications.status, createdAt: notifications.createdAt });
+    try {
+      await queue.add('deliver-notification', { notificationId: notification!.id });
+    } catch (error) {
+      request.log.error({ err: error, notificationId: notification!.id }, 'Notification persisted but enqueue failed');
+      return reply.code(503).send({ id: notification!.id, error: { code: 'QUEUE_UNAVAILABLE', message: `Notification ${notification!.id} was saved as queued but could not be enqueued.` } });
+    }
     return reply.code(201).send({ id: notification!.id, status: notification!.status, createdAt: notification!.createdAt });
+  });
+
+  app.put('/v1/users/:externalUserId', async (request: FastifyRequest<{ Params: { externalUserId: string }; Body: { email: string } }>, reply) => {
+    const tenantId = request.tenantId!;
+    const params = z.object({ externalUserId: z.string().min(1).max(255) }).parse(request.params);
+    const body = z.object({ email: z.string().email().max(320) }).strict().parse(request.body);
+    const [user] = await db.insert(users).values({ tenantId, externalUserId: params.externalUserId, email: body.email })
+      .onConflictDoUpdate({ target: [users.tenantId, users.externalUserId], set: { email: body.email } })
+      .returning({ id: users.id, externalUserId: users.externalUserId, email: users.email });
+    return reply.code(200).send(user);
+  });
+
+  app.post('/v1/templates', async (request: FastifyRequest, reply) => {
+    const tenantId = request.tenantId!;
+    const input = createTemplate.parse(request.body);
+    const [template] = await db.insert(templates).values({ tenantId, ...input })
+      .returning({ id: templates.id, name: templates.name, subject: templates.subject, body: templates.body, variables: templates.variables, createdAt: templates.createdAt });
+    return reply.code(201).send(template);
+  });
+
+  app.get('/v1/templates', async (request: FastifyRequest, reply) => {
+    const tenantId = request.tenantId!;
+    const results = await db.select({ id: templates.id, name: templates.name, subject: templates.subject, body: templates.body, variables: templates.variables, createdAt: templates.createdAt })
+      .from(templates).where(eq(templates.tenantId, tenantId));
+    return reply.code(200).send({ templates: results });
   });
 
   app.get('/health', async () => ({ status: 'ok' }));
