@@ -1,0 +1,47 @@
+# Render Blueprint: one free web service that runs the API and the worker in the same process (RUN_WORKER=true),
+# plus a Postgres database and a Key Value (Redis) instance. See docs/DEPLOY.md for free-tier limits.
+services:
+  - type: web
+    name: notification-service
+    runtime: docker
+    plan: free
+    healthCheckPath: /ready
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: notification-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: notification-redis
+          property: connectionString
+      - key: STREAM_TOKEN_SECRET
+        generateValue: true
+      - key: METRICS_TOKEN
+        generateValue: true
+      - key: RUN_WORKER
+        value: "true"
+      - key: WORKER_CONCURRENCY
+        value: "10"
+      - key: EMAIL_PROVIDER
+        value: mock
+      # Only needed with EMAIL_PROVIDER=resend. Render asks for these once, when the Blueprint is first created.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+
+  - type: keyvalue
+    name: notification-redis
+    plan: free
+    # Empty allow list: reachable only from services in the same Render account and region, not from the internet.
+    ipAllowList: []
+    # A queue must never evict keys under memory pressure.
+    maxmemoryPolicy: noeviction
+
+databases:
+  - name: notification-db
+    plan: free
+    databaseName: notifications
+    user: notifications
