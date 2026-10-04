@@ -1,5 +1,6 @@
-# Render Blueprint: one free web service that runs the API and the worker in the same process (RUN_WORKER=true),
-# plus a Postgres database and a Key Value (Redis) instance. See docs/DEPLOY.md for free-tier limits.
+# Render Blueprint: ONE free web service. It runs the API, the worker and a small embedded Redis in the same container
+# (START_EMBEDDED_REDIS + RUN_WORKER), plus a free Postgres database. Render allows only one free Key Value instance per
+# workspace, so this avoids needing one. See docs/DEPLOY.md for what that costs and when to switch to a real Redis.
 services:
   - type: web
     name: notification-service
@@ -11,11 +12,10 @@ services:
         fromDatabase:
           name: notification-db
           property: connectionString
+      - key: START_EMBEDDED_REDIS
+        value: "true"
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: notification-redis
-          property: connectionString
+        value: redis://127.0.0.1:6379
       - key: STREAM_TOKEN_SECRET
         generateValue: true
       - key: METRICS_TOKEN
@@ -31,14 +31,6 @@ services:
         sync: false
       - key: EMAIL_FROM
         sync: false
-
-  - type: keyvalue
-    name: notification-redis
-    plan: free
-    # Empty allow list: reachable only from services in the same Render account and region, not from the internet.
-    ipAllowList: []
-    # A queue must never evict keys under memory pressure.
-    maxmemoryPolicy: noeviction
 
 databases:
   - name: notification-db

@@ -33,6 +33,21 @@ describe('/ready', () => {
   });
 });
 
+describe('when a dependency hangs instead of failing', () => {
+  it('/ready answers 503 and /metrics still responds', async () => {
+    const never = new Promise<never>(() => undefined); // like a dead Redis behind a connection that retries forever
+    const { db } = fakes();
+    const app = buildApp(db, { add: vi.fn(), getJobCounts: () => never });
+    const ready = await app.inject({ url: '/ready' });
+    expect(ready.statusCode).toBe(503);
+    expect(ready.json().checks).toEqual({ postgres: true, redis: false });
+    const metrics = await app.inject({ url: '/metrics' });
+    expect(metrics.statusCode).toBe(200);
+    expect(metrics.body).toContain('notifications{status="delivered"} 3');
+    await app.close();
+  }, 15_000);
+});
+
 describe('/metrics', () => {
   it('exposes outcome counts, queue depth and request latency by route pattern', async () => {
     const { db, queue } = fakes();
