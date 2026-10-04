@@ -21,3 +21,12 @@
 - **Queue retry policy:** Phase 2 uses BullMQ defaults (one processing attempt by default); application retries, a dead-letter queue, and rate limiting are deferred to Phase 4. A provider failure is recorded and transitions the notification to `failed`.
 - **Email channel selection:** The mock channel is the default. Resend is enabled only when `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, and `EMAIL_FROM` are present; provider-specific behavior stays in the adapter.
 - **Worker idempotency:** Workers claim with a conditional `queued` to `sending` update. Missing returned rows, including already delivered notifications, are skipped.
+
+## Phase 3: real-time and inbox
+
+- **The `notifications` row is the inbox:** In-app notifications are persisted at creation, so reconnect replay is a query, not a separate store. Redis pub/sub is only the live mirror and may drop messages without loss of data.
+- **Subscribe before backlog:** A socket joins its user's pub/sub topic first, then reads the inbox, so nothing published between the two is missed. The cost is a possible duplicate, which clients drop by notification `id`.
+- **Per-user topics with per-instance refcount:** An instance subscribes to `user:{id}` only while it holds a socket for that user, avoiding every instance receiving every tenant's traffic. One subscriber connection per instance, because a subscribed Redis client cannot issue other commands.
+- **Short-lived HMAC tokens, not JWT:** The tenant backend (which holds the API key) mints a one-hour token containing user and tenant IDs, signed with `STREAM_TOKEN_SECRET` via `node:crypto`. Browsers never see an API key, and no JWT dependency is needed. Tokens cannot be revoked before expiry.
+- **Channels per notification:** `channels` (`email`, `in_app`; default `email`) is stored on the notification. Each channel gets its own `delivery_attempts` row; any channel failure marks the notification `failed` until Phase 4 retries per channel.
+- **Read state is a nullable `read_at`:** Marking read uses `coalesce(read_at, now())`, so repeated acknowledgements are idempotent and keep the first read time. Read events are not broadcast to a user's other tabs.

@@ -3,6 +3,7 @@
   "dialect": "postgresql",
   "entries": [
     { "idx": 0, "version": "7", "when": 1790990000000, "tag": "0000_initial", "breakpoints": true },
-    { "idx": 1, "version": "7", "when": 1791025000000, "tag": "0001_phase2", "breakpoints": true }
+    { "idx": 1, "version": "7", "when": 1791025000000, "tag": "0001_phase2", "breakpoints": true },
+    { "idx": 2, "version": "7", "when": 1791110000000, "tag": "0002_phase3", "breakpoints": true }
   ]
 }

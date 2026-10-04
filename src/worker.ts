@@ -4,14 +4,16 @@ import { Redis } from 'ioredis';
 import { createDatabase } from './db/client.js';
 import { createEmailChannel } from './resend-email-channel.js';
 import { notificationQueueName } from './queue.js';
+import { createRedisPublisher } from './realtime.js';
 import { processNotification } from './worker-service.js';
 
 const { db, pool } = createDatabase();
 const connection = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: null });
 const channel = createEmailChannel();
+const publisher = createRedisPublisher(connection);
 const worker = new Worker(notificationQueueName, async (job) => {
   if (typeof job.data.notificationId !== 'string') throw new Error('Invalid notification job');
-  await processNotification(db, channel, job.data.notificationId);
+  await processNotification(db, channel, job.data.notificationId, publisher);
 }, { connection });
 
 worker.on('failed', (job, error) => console.error('Notification job failed', { jobId: job?.id, error }));

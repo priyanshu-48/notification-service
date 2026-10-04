@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Notification demo</title>
+<style>
+  body { font: 16px system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  input { width: 100%; box-sizing: border-box; padding: .5rem; }
+  li { padding: .5rem; border-bottom: 1px solid #ddd; cursor: pointer; list-style: none; }
+  li.unread { font-weight: 600; background: #eef6ff; }
+  small { color: #666; display: block; font-weight: 400; }
+</style>
+<h1>Notifications <small id="status">disconnected</small></h1>
+<p>Paste a stream token (<code>POST /v1/users/:id/stream-token</code>) and press Enter. Click a notification to mark it read.</p>
+<input id="token" placeholder="stream token" autocomplete="off">
+<ul id="list" style="padding:0"></ul>
+<script>
+const items = new Map(); // id -> item; keyed by id so the backlog and live pushes can overlap safely
+const list = document.getElementById('list');
+const status = document.getElementById('status');
+const tokenInput = document.getElementById('token');
+let ws, retry = 0;
+
+function render() {
+  list.replaceChildren(...[...items.values()]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((n) => {
+      const li = document.createElement('li');
+      li.className = n.readAt ? '' : 'unread';
+      li.textContent = n.payload.title ?? n.payload.message ?? n.type;
+      const small = document.createElement('small');
+      small.textContent = new Date(n.createdAt).toLocaleString();
+      li.append(small);
+      li.onclick = () => ws?.send(JSON.stringify({ type: 'read', id: n.id }));
+      return li;
+    }));
+}
+
+function connect() {
+  const token = tokenInput.value.trim();
+  if (!token) return;
+  sessionStorage.setItem('token', token);
+  ws?.close();
+  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/stream?token=${encodeURIComponent(token)}`);
+  ws.onopen = () => { retry = 0; status.textContent = 'connected'; };
+  ws.onmessage = ({ data }) => {
+    const msg = JSON.parse(data);
+    if (msg.type === 'inbox') msg.notifications.forEach((n) => items.set(n.id, n));
+    else if (msg.type === 'notification') items.set(msg.notification.id, msg.notification);
+    else if (msg.type === 'read' && msg.ok && items.has(msg.id)) items.get(msg.id).readAt = new Date().toISOString();
+    render();
+  };
+  ws.onclose = (e) => {
+    status.textContent = 'disconnected';
+    if (e.code !== 4401) setTimeout(connect, Math.min(1000 * 2 ** retry++, 15000)); // reconnect replays the inbox
+  };
+}
+
+tokenInput.value = sessionStorage.getItem('token') ?? '';
+tokenInput.onkeydown = (e) => { if (e.key === 'Enter') connect(); };
+connect();
+</script>

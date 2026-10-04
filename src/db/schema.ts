@@ -52,11 +52,14 @@ export const notifications = pgTable('notifications', {
   payload: jsonb('payload').notNull(),
   templateName: text('template_name'),
   templateVariables: jsonb('template_variables').$type<Record<string, unknown>>(),
+  channels: jsonb('channels').$type<Array<'email' | 'in_app'>>().notNull().default(['email']),
   status: notificationStatus('status').notNull().default('queued'),
   idempotencyKey: text('idempotency_key'),
+  readAt: timestamp('read_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex('notifications_tenant_idempotency_key_idx').on(table.tenantId, table.idempotencyKey),
+  index('notifications_user_created_at_idx').on(table.userId, table.createdAt),
   index('notifications_tenant_created_at_idx').on(table.tenantId, table.createdAt),
 ]);
 
