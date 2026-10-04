@@ -56,6 +56,10 @@ Successful creation returns `201` with `id`, `status: "queued"`, and `createdAt`
 
 `GET /v1/stats?hours=24` (counts by status and by channel/attempt status), `GET /v1/notifications?status=&limit=&before=` (log, newest first, `nextBefore` cursor), and API keys: `GET /v1/api-keys`, `POST /v1/api-keys` (returns the plaintext key once), `DELETE /v1/api-keys/:id` (`409` for the last active key). Plus the dead-letter endpoints below.
 
+## Dashboard
+
+A React dashboard (overview counts, notification log with per-attempt detail and replay, dead letters, API key management) lives in `dashboard/`. Build it with `npm run dashboard:build`; the API then serves it at `http://localhost:3000/dashboard/`. Sign in by pasting a tenant API key; it is kept in that browser tab only. For development, `npm --prefix dashboard run dev` serves it with hot reload and proxies `/v1` to the API on port 3000.
+
 ## Reliability
 
 **Delivery guarantee: at-least-once processing, effectively-once delivery.** A notification is never dropped by a crash, restart or provider outage, and a crash can at worst cause a repeat *attempt*, which is deduplicated so the recipient sees it once. Three layers provide this:
