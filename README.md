@@ -45,6 +45,17 @@ Open `/demo` in a browser, paste a token, and send notifications to watch them a
 
 Successful creation returns `201` with `id`, `status: "queued"`, and `createdAt`. Errors use `{ "error": { "code": "...", "message": "..." } }`; malformed input returns `400`, missing/invalid credentials `401`, and a user not found within the tenant `422`.
 
+## Preferences, quiet hours and digests
+
+- `GET/PUT /v1/users/:externalUserId/preferences`. PUT replaces the whole set: `{ "preferences": [{ "channel": "email", "type": "promo", "enabled": false }, { "channel": "*", "type": "*", "quietHours": { "start": "22:00", "end": "07:00", "timezone": "Asia/Kolkata" } }] }`. `channel` is `email`, `in_app` or `*`; `type` is a notification type or `*`. The most specific row decides `enabled`; quiet hours come from the most specific row that defines them.
+- An opted-out channel is skipped (recorded as a `skipped` attempt). If nothing was delivered the notification ends as `suppressed`.
+- **Quiet hours delay, they never drop:** during the window the notification waits (status `queued`, `deliverAfter` set) and is delivered when the window ends. Opted-out channels are not delayed, they are skipped.
+- **Digests:** add `"digestKey": "comments:post-42"` (and optionally `"digestWindowSeconds"`, 10 to 86400, default 300) to a notification. The first one waits out the window; every other notification for that user and key that arrives meanwhile is absorbed (`batched`) and one combined notification goes out ("3 new comment notifications", or your template with an extra `{{count}}` variable). In-app inbox items carry `count`. A lone notification is sent normally.
+
+## Dashboard API
+
+`GET /v1/stats?hours=24` (counts by status and by channel/attempt status), `GET /v1/notifications?status=&limit=&before=` (log, newest first, `nextBefore` cursor), and API keys: `GET /v1/api-keys`, `POST /v1/api-keys` (returns the plaintext key once), `DELETE /v1/api-keys/:id` (`409` for the last active key). Plus the dead-letter endpoints below.
+
 ## Reliability
 
 **Delivery guarantee: at-least-once processing, effectively-once delivery.** A notification is never dropped by a crash, restart or provider outage, and a crash can at worst cause a repeat *attempt*, which is deduplicated so the recipient sees it once. Three layers provide this:

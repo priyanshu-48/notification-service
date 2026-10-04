@@ -111,7 +111,7 @@ describe('API to queue to worker integration', () => {
 
     const [failureNotification] = await db.insert(notifications).values({ tenantId: tenantAId, userId: userAId, type: 'failure-test', payload: {} }).returning();
     const failingChannel = { name: 'mock-failure', send: async () => { throw new Error('provider unavailable'); } };
-    await expect(processNotification(db, failingChannel, failureNotification!.id, undefined, 1)).resolves.toBeUndefined();
+    await expect(processNotification(db, failingChannel, failureNotification!.id, { maxAttempts: 1 })).resolves.toBeUndefined();
     const [failedRow] = await db.select({ status: notifications.status }).from(notifications).where(eq(notifications.id, failureNotification!.id));
     expect(failedRow?.status).toBe('failed');
     const failedAttempts = await db.select().from(deliveryAttempts).where(eq(deliveryAttempts.notificationId, failureNotification!.id));

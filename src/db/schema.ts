@@ -1,7 +1,7 @@
-import { pgEnum, pgTable, text, timestamp, uuid, uniqueIndex, index, jsonb, boolean, integer } from 'drizzle-orm/pg-core';
+import { pgEnum, pgTable, text, timestamp, uuid, uniqueIndex, index, jsonb, boolean, integer, type AnyPgColumn } from 'drizzle-orm/pg-core';
 
-export const notificationStatus = pgEnum('notification_status', ['queued', 'sending', 'delivered', 'failed']);
-export const deliveryStatus = pgEnum('delivery_status', ['pending', 'sent', 'failed']);
+export const notificationStatus = pgEnum('notification_status', ['queued', 'sending', 'delivered', 'failed', 'batched', 'suppressed']);
+export const deliveryStatus = pgEnum('delivery_status', ['pending', 'sent', 'failed', 'skipped']);
 
 export const tenants = pgTable('tenants', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -57,6 +57,10 @@ export const notifications = pgTable('notifications', {
   idempotencyKey: text('idempotency_key'),
   requestHash: text('request_hash'),
   attempts: integer('attempts').notNull().default(0),
+  digestKey: text('digest_key'),
+  digestParentId: uuid('digest_parent_id').references((): AnyPgColumn => notifications.id, { onDelete: 'set null' }),
+  digestCount: integer('digest_count').notNull().default(1),
+  deliverAfter: timestamp('deliver_after', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   readAt: timestamp('read_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -64,6 +68,8 @@ export const notifications = pgTable('notifications', {
   uniqueIndex('notifications_tenant_idempotency_key_idx').on(table.tenantId, table.idempotencyKey),
   index('notifications_user_created_at_idx').on(table.userId, table.createdAt),
   index('notifications_status_updated_at_idx').on(table.status, table.updatedAt),
+  index('notifications_digest_parent_idx').on(table.digestParentId),
+  index('notifications_digest_siblings_idx').on(table.tenantId, table.userId, table.digestKey),
   index('notifications_tenant_created_at_idx').on(table.tenantId, table.createdAt),
 ]);
 
