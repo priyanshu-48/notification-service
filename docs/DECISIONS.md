@@ -51,3 +51,11 @@
 - **The inbox shows what was delivered in-app:** It is now defined by a `sent` in-app attempt instead of "has the in_app channel", so notifications held by quiet hours or a digest window do not appear early, and digest members appear only through their leader.
 - **Dashboard auth reuses API keys:** The dashboard calls the same tenant-scoped API with a pasted API key rather than adding a second login system. Keys can be created and revoked, but the last active key cannot be revoked, so a tenant cannot lock itself out.
 - **No `last_used` on API keys:** It would add a database write to every request. Add it with a throttled update if the dashboard needs it.
+
+## Phase 6a: client SDK
+
+- **Two classes, split by trust:** `NotificationClient` needs the API key and belongs on a server; `NotificationStream` runs where users are and only ever holds a one-hour stream token. Splitting them makes it hard to ship the key to a browser by accident.
+- **Callers use their own user ids:** `POST /v1/notifications` now accepts `externalUserId` (exactly one of it or `userId`). Otherwise every client would have to store the internal UUID returned by `upsertUser`.
+- **`send` always carries an idempotency key:** Generated if the caller gives none, and reused across retries. That is what makes retrying a `POST` safe, including the `503` where the notification was saved but not queued. Only requests that are safe to repeat are retried.
+- **`getToken` is a callback, not a token:** Tokens expire after an hour and reconnects are routine, so the stream asks for a fresh one on every connect. Repeated `4401` rejections stop the stream instead of looping.
+- **No dependencies, standard WebSocket API:** Uses global `fetch` and `WebSocket` (browsers, extensions, Node 22+); a `WebSocket` class can be injected for older Node. Not published to npm yet.

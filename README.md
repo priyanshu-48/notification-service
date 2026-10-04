@@ -45,6 +45,10 @@ Open `/demo` in a browser, paste a token, and send notifications to watch them a
 
 Successful creation returns `201` with `id`, `status: "queued"`, and `createdAt`. Errors use `{ "error": { "code": "...", "message": "..." } }`; malformed input returns `400`, missing/invalid credentials `401`, and a user not found within the tenant `422`.
 
+## Client SDK
+
+`sdk/` is a zero-dependency TypeScript client: a server-side `NotificationClient` (retries safely using idempotency keys) and a browser `NotificationStream` (live notifications with inbox replay and reconnects). `POST /v1/notifications` accepts `externalUserId` (your own user id) instead of the internal `userId`. See [sdk/README.md](sdk/README.md).
+
 ## Preferences, quiet hours and digests
 
 - `GET/PUT /v1/users/:externalUserId/preferences`. PUT replaces the whole set: `{ "preferences": [{ "channel": "email", "type": "promo", "enabled": false }, { "channel": "*", "type": "*", "quietHours": { "start": "22:00", "end": "07:00", "timezone": "Asia/Kolkata" } }] }`. `channel` is `email`, `in_app` or `*`; `type` is a notification type or `*`. The most specific row decides `enabled`; quiet hours come from the most specific row that defines them.
