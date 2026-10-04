@@ -11,6 +11,7 @@ import { createStreamToken } from './stream-token.js';
 import { listInbox, markRead } from './inbox.js';
 import { registerStream } from './realtime.js';
 import { registerManagementRoutes } from './management-routes.js';
+import { registerOperations } from './metrics.js';
 import type { Redis } from 'ioredis';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -51,7 +52,7 @@ export interface StreamOptions { secret: string; subscriber: Redis }
 
 const demoPage = readFileSync(new URL('../public/demo.html', import.meta.url), 'utf8');
 
-export interface AppOptions { stream?: StreamOptions; rateLimiter?: RateLimiter }
+export interface AppOptions { stream?: StreamOptions; rateLimiter?: RateLimiter; metricsToken?: string }
 
 // Key-order-independent JSON, so the same request body always fingerprints the same.
 function canonicalJson(value: unknown): string {
@@ -65,7 +66,7 @@ function canonicalJson(value: unknown): string {
 const idempotencyKeyHeader = z.string().min(1).max(255).optional();
 const notFound = { error: { code: 'NOT_FOUND', message: 'The notification does not exist for this tenant.' } };
 
-export function buildApp(db: Database, queue: NotificationQueue, { stream, rateLimiter }: AppOptions = {}): FastifyInstance {
+export function buildApp(db: Database, queue: NotificationQueue, { stream, rateLimiter, metricsToken }: AppOptions = {}): FastifyInstance {
   const app = Fastify({
     logger: {
       // The stream token travels in the query string, so keep it out of the logs.
@@ -258,6 +259,7 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
   });
 
   registerManagementRoutes(app, db);
+  registerOperations(app, db, queue, metricsToken);
 
   // The built dashboard (npm run dashboard:build) is served at /dashboard/; skipped when it hasn't been built.
   const dashboardRoot = fileURLToPath(new URL('../dashboard/dist', import.meta.url));

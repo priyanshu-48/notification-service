@@ -10,6 +10,7 @@ export const defaultRetry = { attempts: maxDeliveryAttempts, backoff: { type: 'e
 
 export interface NotificationQueue {
   add(name: string, data: { notificationId: string }, opts?: object): Promise<unknown>;
+  getJobCounts?(...states: string[]): Promise<Record<string, number>>;
   close?(): Promise<void>;
 }
 
