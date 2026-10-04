@@ -59,3 +59,9 @@
 - **`send` always carries an idempotency key:** Generated if the caller gives none, and reused across retries. That is what makes retrying a `POST` safe, including the `503` where the notification was saved but not queued. Only requests that are safe to repeat are retried.
 - **`getToken` is a callback, not a token:** Tokens expire after an hour and reconnects are routine, so the stream asks for a fresh one on every connect. Repeated `4401` rejections stop the stream instead of looping.
 - **No dependencies, standard WebSocket API:** Uses global `fetch` and `WebSocket` (browsers, extensions, Node 22+); a `WebSocket` class can be injected for older Node. Not published to npm yet.
+
+## Phase 7: deployment
+
+- **Embedded Redis is an opt-in demo mode, not the architecture:** Render allows one free Key Value instance per workspace, so the free Blueprint runs Redis inside the service container (`START_EMBEDDED_REDIS=true`). It costs roughly 15 to 25% of capacity at 0.1 CPU (measured) and empties the queue on every sleep or restart. That is survivable only because Postgres is the source of truth and the sweeper rebuilds the queue, which is the design working as intended. It must not be used with more than one app instance.
+- **Health checks must fail, not hang:** The queue's Redis connection retries forever (BullMQ requires it), so a dead Redis made `/ready` and `/metrics` hang until a client timed out. Each dependency check now has a 2 second timeout, so `/ready` answers 503 and names the failing dependency. Found by killing Redis in the running container; the first unit test faked an immediate error and missed it.
+- **Outcome metrics come from Postgres, not worker counters:** The worker may be a separate process, and counters would reset on restart or sleep. Scraping the API reads the durable state instead.

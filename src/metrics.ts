@@ -8,6 +8,12 @@ import type { NotificationQueue } from './queue.js';
 
 type Database = NodePgDatabase<typeof schema>;
 
+// The queue's Redis connection retries forever by design, so a dead Redis would hang a health check or scrape instead of failing it.
+const checkTimeoutMs = 2000;
+const withTimeout = <T>(work: Promise<T>): Promise<T> => Promise.race([
+  work, new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('timed out')), checkTimeoutMs).unref()),
+]);
+
 // /ready: can this instance do useful work? (/health only says the process is up.) Used by deploy platforms to gate traffic.
 // /metrics: Prometheus text format. Outcome counts come from Postgres and queue depth from Redis, so one scrape of the API
 // describes the whole system even when the worker runs as a separate process.
@@ -36,15 +42,15 @@ export function registerOperations(app: FastifyInstance, db: Database, queue: No
     name: 'notification_queue_jobs', help: 'BullMQ jobs by state', labelNames: ['state'] as const, registers: [registry],
     async collect() {
       this.reset();
-      const counts = await queue.getJobCounts?.('waiting', 'active', 'delayed', 'failed') ?? {};
+      const counts = await withTimeout(Promise.resolve(queue.getJobCounts?.('waiting', 'active', 'delayed', 'failed') ?? {})).catch((): Record<string, number> => ({}));
       for (const [state, n] of Object.entries(counts)) this.set({ state }, n);
     },
   });
 
   app.get('/ready', async (_request, reply) => {
     const checks = {
-      postgres: await db.execute(sql`select 1`).then(() => true, () => false),
-      redis: await Promise.resolve(queue.getJobCounts?.('waiting')).then(() => true, () => false),
+      postgres: await withTimeout(Promise.resolve(db.execute(sql`select 1`))).then(() => true, () => false),
+      redis: await withTimeout(Promise.resolve(queue.getJobCounts?.('waiting'))).then(() => true, () => false),
     };
     return reply.code(checks.postgres && checks.redis ? 200 : 503).send({ status: checks.postgres && checks.redis ? 'ready' : 'degraded', checks });
   });
