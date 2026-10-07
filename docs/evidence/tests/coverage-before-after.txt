@@ -1,0 +1,5 @@
+# Coverage before and after the new tests (commit see git log)
+before (2198e13, 86 tests / 16 files): lines 79.84% (408/511), statements 78.5%, branches 72.5%, functions 75.97%  -> coverage-run.log
+after  (108 tests / 18 files):          lines 81.99% (419/511), statements 80.94% (497/614), branches 78.24% (259/331), functions 77.92% (120/154) -> coverage-run-after-new-tests.log
+src/resend-email-channel.ts: 0% -> 100% lines. Still 0%: server.ts, worker.ts, worker-runtime.ts, db/client.ts, db/migrate.ts, scripts/provision-tenant.ts (entry points).
+Mutation check: removing the tenant filter from GET /v1/notifications/:id made the isolation test fail (expected 404, got 200); reverted.
