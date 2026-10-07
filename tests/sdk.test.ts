@@ -60,6 +60,16 @@ describe('NotificationClient', () => {
     expect((fetch.mock.calls[0] as [string])[0]).toBe('https://n.example.test/v1/users/a%2Fb%20c/inbox/n1/read');
   });
 
+  it('deleteUser sends DELETE to the encoded path, returns nothing, and is safe to retry', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(json(503, { error: { code: 'QUEUE_UNAVAILABLE', message: 'later' } })).mockResolvedValueOnce(json(204, null));
+    await expect(client(fetch).deleteUser('a/b c')).resolves.toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://n.example.test/v1/users/a%2Fb%20c');
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBeUndefined();
+  });
+
   it('requires an api key and base url', () => {
     expect(() => new NotificationClient({ baseUrl: 'x', apiKey: '' })).toThrow('apiKey');
     expect(() => new NotificationClient({ baseUrl: '', apiKey: 'k' })).toThrow('baseUrl');

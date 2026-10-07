@@ -67,3 +67,11 @@
 - **Outcome metrics come from Postgres, not worker counters:** The worker may be a separate process, and counters would reset on restart or sleep. Scraping the API reads the durable state instead.
 - **External Postgres on the free setup:** Render's free Postgres expires after 30 days, which would kill a portfolio link. The Blueprint therefore creates no database and takes `DATABASE_URL` as an input, so any free Postgres without an expiry works. The cost is a manual step, and the readiness-check timeout became configurable (`READY_TIMEOUT_MS`) because a database that suspends when idle can take a few seconds to answer its first query.
 - **The bare URL redirects to the dashboard:** It is the first thing a visitor opens. When no dashboard is built (local development) it returns a small JSON pointer instead of a 404.
+
+## Phase 6b: erasing a user
+
+- **Why it exists:** The tracker's "delete my data" removed its own records but left the user, their email and their notifications in this service. A service that holds personal data on behalf of other apps has to let them erase it.
+- **One statement, relying on the schema:** `DELETE /v1/users/:externalUserId` deletes the `users` row; `ON DELETE CASCADE` removes preferences, notifications and (through those) delivery attempts. Digest members go with their leader because they share the user. Nothing is soft-deleted: erasure that keeps the data is not erasure.
+- **Always 204:** A repeat, a retry after a lost response, and a user that was never registered all answer 204, so a caller finishing "delete my account" is never blocked by this call and can retry freely. Tenant scoping is in the `WHERE`, so one tenant can never erase another's user, even with the same external id.
+- **Not logged:** Only a count is logged, not the external id, because the id may identify a person.
+- **Known limits:** A worker that has already claimed one of the user's notifications and sent it cannot unsend it, and its attempt record is then lost with the user (the insert of that record fails and the job retries into a no-op). An open WebSocket for that user stays connected until the stream token expires (at most one hour) but receives nothing, since nothing exists to deliver. Backups are not touched.
