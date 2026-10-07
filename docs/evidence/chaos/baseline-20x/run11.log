@@ -1,0 +1,9 @@
+
+ RUN  v5.0.3 C:/Projects/notification-service
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  01:45:18
+   Duration  7.86s (tests 89%, import 10%, transform 1%)
+
