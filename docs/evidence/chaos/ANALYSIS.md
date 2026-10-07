@@ -23,7 +23,7 @@
 
 ## What the assertions prove
 - All 20 notifications reach `delivered` after the crash (none lost).
-- The provider's receipt sink has **20 distinct entries and exactly 20 lines** (nothing delivered twice at the provider, using the per-notification idempotency key).
+- The provider's receipt sink has **20 distinct entries and exactly 20 lines** (the fake provider keeps one entry per idempotency key, so this shows the key was identical on the retry after the crash; it is the provider-side dedupe the real Resend `Idempotency-Key` is meant to give).
 - More provider calls were attempted than 20 (`calls.txt` longer than 20), so the crashed sends really were retried and the dedupe did the work, not luck.
 - Every notification has exactly **one `sent` delivery attempt** row.
 
@@ -36,5 +36,5 @@
 - Everything runs on one laptop under Docker Desktop; no network failures.
 
 ## Honest wording for the resume
-"A chaos test that SIGKILLs a real worker process mid-send with 20 notifications in flight; all 20 were delivered with no duplicate at the provider sink, repeated 20 times with 20 of 20 passing."
+"A chaos test that SIGKILLs a real worker process mid-send with 20 notifications in flight; all 20 were delivered, each with one stable idempotency key and exactly one recorded successful attempt, repeated 20 times with 20 of 20 passing."
 Do not write "zero duplicates in production" or "exactly-once".
