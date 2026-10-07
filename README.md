@@ -166,7 +166,7 @@ What was measured, how, and what it does **not** show. The k6 script is [loadtes
 
 ## Deploying
 
-A Render Blueprint ([render.yaml](render.yaml)) and a guide with the free-tier limits are in [docs/DEPLOY.md](docs/DEPLOY.md). `GET /ready` checks Postgres and Redis, and `GET /metrics` exposes Prometheus metrics (token-protected).
+A Render Blueprint ([render.yaml](render.yaml)) and a guide with the free-tier limits are in [docs/DEPLOY.md](docs/DEPLOY.md). The free setup runs API, worker and Redis in one container and uses a free external Postgres (Render's own free Postgres expires after 30 days). `GET /ready` checks Postgres and Redis, and `GET /metrics` exposes Prometheus metrics (token-protected).
 
 ## Known limitations
 

@@ -1,6 +1,6 @@
 # Render Blueprint: ONE free web service. It runs the API, the worker and a small embedded Redis in the same container
-# (START_EMBEDDED_REDIS + RUN_WORKER), plus a free Postgres database. Render allows only one free Key Value instance per
-# workspace, so this avoids needing one. See docs/DEPLOY.md for what that costs and when to switch to a real Redis.
+# (START_EMBEDDED_REDIS + RUN_WORKER). Postgres is NOT created here: Render's free Postgres expires after 30 days, so use a
+# free external Postgres with no expiry (e.g. Neon) and paste its connection string as DATABASE_URL. See docs/DEPLOY.md.
 services:
   - type: web
     name: notification-service
@@ -8,14 +8,16 @@ services:
     plan: free
     healthCheckPath: /ready
     envVars:
+      # Required. Render asks for it when the Blueprint is first created; afterwards edit it in the service's Environment tab.
       - key: DATABASE_URL
-        fromDatabase:
-          name: notification-db
-          property: connectionString
+        sync: false
       - key: START_EMBEDDED_REDIS
         value: "true"
       - key: REDIS_URL
         value: redis://127.0.0.1:6379
+      # A database that suspends when idle can take a few seconds to wake; don't report "not ready" before it has.
+      - key: READY_TIMEOUT_MS
+        value: "4000"
       - key: STREAM_TOKEN_SECRET
         generateValue: true
       - key: METRICS_TOKEN
@@ -26,14 +28,8 @@ services:
         value: "10"
       - key: EMAIL_PROVIDER
         value: mock
-      # Only needed with EMAIL_PROVIDER=resend. Render asks for these once, when the Blueprint is first created.
+      # Only needed with EMAIL_PROVIDER=resend.
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM
         sync: false
-
-databases:
-  - name: notification-db
-    plan: free
-    databaseName: notifications
-    user: notifications

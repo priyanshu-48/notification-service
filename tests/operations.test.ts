@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { existsSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/app.js';
 
 function fakes(overrides: { postgresDown?: boolean; redisDown?: boolean } = {}) {
@@ -46,6 +47,36 @@ describe('when a dependency hangs instead of failing', () => {
     expect(metrics.body).toContain('notifications{status="delivered"} 3');
     await app.close();
   }, 15_000);
+});
+
+describe('READY_TIMEOUT_MS', () => {
+  afterEach(() => { delete process.env.READY_TIMEOUT_MS; });
+
+  it('shortens how long /ready waits for a dependency that never answers', async () => {
+    process.env.READY_TIMEOUT_MS = '100';
+    const { db } = fakes();
+    const app = buildApp(db, { add: vi.fn(), getJobCounts: () => new Promise<never>(() => undefined) });
+    const started = Date.now();
+    expect((await app.inject({ url: '/ready' })).statusCode).toBe(503);
+    expect(Date.now() - started).toBeLessThan(1500); // the default would take 2000ms
+    await app.close();
+  });
+});
+
+describe('GET /', () => {
+  it('sends visitors to the dashboard when it is built, and explains itself when it is not', async () => {
+    const { db, queue } = fakes();
+    const app = buildApp(db, queue);
+    const res = await app.inject({ url: '/' });
+    if (existsSync(new URL('../dashboard/dist', import.meta.url))) {
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toBe('/dashboard/');
+    } else {
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ service: 'notification-service', ready: '/ready' });
+    }
+    await app.close();
+  });
 });
 
 describe('/metrics', () => {

@@ -263,7 +263,12 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
 
   // The built dashboard (npm run dashboard:build) is served at /dashboard/; skipped when it hasn't been built.
   const dashboardRoot = fileURLToPath(new URL('../dashboard/dist', import.meta.url));
-  if (existsSync(dashboardRoot)) void app.register(fastifyStatic, { root: dashboardRoot, prefix: '/dashboard/', redirect: true });
+  const hasDashboard = existsSync(dashboardRoot);
+  if (hasDashboard) void app.register(fastifyStatic, { root: dashboardRoot, prefix: '/dashboard/', redirect: true });
+  // The bare URL is what people open first, so send them somewhere useful instead of a 404.
+  app.get('/', async (_request, reply) => (hasDashboard
+    ? reply.redirect('/dashboard/')
+    : reply.send({ service: 'notification-service', health: '/health', ready: '/ready' })));
 
   if (stream) {
     // The tenant backend mints a short-lived token for its end user; the browser uses it to open /stream.
