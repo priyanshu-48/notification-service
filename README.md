@@ -109,6 +109,8 @@ Successful creation returns `201` with `id`, `status: "queued"`, and `createdAt`
 
 ## Dashboard API
 
+**Erasing a user:** `DELETE /v1/users/:externalUserId` removes the user and everything held about them (notifications, delivery attempts, preferences) and answers `204`, also when repeated or when the user was never registered, so it is safe to retry. It only reaches users of the calling tenant. Notifications already queued for that user are skipped, and an open stream stops receiving anything (its token expires within the hour).
+
 `GET /v1/stats?hours=24` (counts by status and by channel/attempt status), `GET /v1/notifications?status=&limit=&before=` (log, newest first, `nextBefore` cursor), and API keys: `GET /v1/api-keys`, `POST /v1/api-keys` (returns the plaintext key once), `DELETE /v1/api-keys/:id` (`409` for the last active key). Plus the dead-letter endpoints below.
 
 ## Dashboard

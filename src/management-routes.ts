@@ -44,6 +44,18 @@ export function registerManagementRoutes(app: FastifyInstance, db: Database): vo
     return reply.code(200).send({ preferences: body.preferences });
   });
 
+  // Erasure. Removes the user and, through ON DELETE CASCADE, their preferences, notifications and delivery attempts.
+  // Repeating it is fine and also answers 204, so a caller that retries (or that deletes a user who was never registered
+  // here) is never told something went wrong. Jobs already queued for the user's notifications find nothing and are skipped.
+  app.delete('/v1/users/:externalUserId', async (request: FastifyRequest<{ Params: { externalUserId: string } }>, reply) => {
+    const tenantId = request.tenantId!;
+    const { externalUserId } = z.object({ externalUserId: z.string().min(1).max(255) }).parse(request.params);
+    const deleted = await db.delete(users).where(and(eq(users.tenantId, tenantId), eq(users.externalUserId, externalUserId))).returning({ id: users.id });
+    // Counts only: the external id may identify a person, so it is not logged.
+    request.log.info({ tenantId, erased: deleted.length }, 'user erased');
+    return reply.code(204).send();
+  });
+
   app.get('/v1/stats', async (request: FastifyRequest<{ Querystring: { hours?: string } }>, reply) => {
     const tenantId = request.tenantId!;
     const { hours } = z.object({ hours: z.coerce.number().int().min(1).max(24 * 90).default(24) }).parse(request.query);

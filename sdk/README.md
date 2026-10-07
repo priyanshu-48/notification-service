@@ -35,7 +35,7 @@ await notifications.send({ externalUserId: 'user-42', type: 'streak', payload: {
 
 ### Other calls
 
-`getNotification(id)` (status and every delivery attempt), `listNotifications({ status, limit, before })`, `listDeadLetters()`, `replayNotification(id)`, `getPreferences` / `setPreferences(externalUserId, [...])`, `getInbox`, `markRead`, `createTemplate` / `listTemplates`, `getStats(hours)`.
+`deleteUser(externalUserId)` (erase a user and everything held about them; safe to repeat), `getNotification(id)` (status and every delivery attempt), `listNotifications({ status, limit, before })`, `listDeadLetters()`, `replayNotification(id)`, `getPreferences` / `setPreferences(externalUserId, [...])`, `getInbox`, `markRead`, `createTemplate` / `listTemplates`, `getStats(hours)`.
 
 ```ts
 // Quiet hours delay instead of dropping; opt-outs skip a channel for a type.

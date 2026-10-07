@@ -110,6 +110,11 @@ export class NotificationClient {
 
   upsertUser(externalUserId: string, user: { email: string }) { return this.json<UserRecord>('PUT', `/v1/users/${encodeURIComponent(externalUserId)}`, { body: user }); }
 
+  /** Erase a user and everything held about them: their notifications, delivery attempts and preferences. Safe to repeat. */
+  async deleteUser(externalUserId: string): Promise<void> {
+    await this.json('DELETE', `/v1/users/${encodeURIComponent(externalUserId)}`);
+  }
+
   async getPreferences(externalUserId: string) { return (await this.json<{ preferences: Preference[] }>('GET', `/v1/users/${encodeURIComponent(externalUserId)}/preferences`)).preferences; }
 
   /** Replaces the user's whole preference set. */
