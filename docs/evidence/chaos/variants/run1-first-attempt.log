@@ -1,0 +1,39 @@
+
+ RUN  v5.0.3 C:/Projects/notification-service
+
+ ✓ tests/chaos.integration.test.ts > worker crash mid-send > loses no notification and sends none twice when a worker is killed 4012ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > loses nothing and duplicates nothing: 100 in flight 8247ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > loses nothing and duplicates nothing: 500 in flight 8528ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > loses nothing and duplicates nothing: killed after the first send 6707ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > loses nothing and duplicates nothing: killed after 10 sends (a second wave in… 8341ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > two workers run together and one is killed: the survivor finishes everything 7220ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > every worker is killed at once, then a new one starts 6893ms
+stdout | tests/chaos-variants.integration.test.ts > worker crash variants > with production timings (BullMQ default lock and stall intervals, sweeper 30 s / 60 s)
+production-timing recovery took 61 s after the kill
+
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > with production timings (BullMQ default lock and stall intervals, sweeper 30 s / 60 s) 64651ms
+ × tests/chaos-variants.integration.test.ts > Redis restart variants (no worker is killed) > Redis restarts with its data persisted: workers reconnect and finish 185178ms
+   → timed out waiting for delivery to finish after the restart
+ ✓ tests/chaos-variants.integration.test.ts > Redis restart variants (no worker is killed) > Redis restarts and LOSES all its data: the sweeper rebuilds the queue from Postgres 15516ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/chaos-variants.integration.test.ts > Redis restart variants (no worker is killed) > Redis restarts with its data persisted: workers reconnect and finish
+Error: timed out waiting for delivery to finish after the restart
+ ❯ until tests/chaos-variants.integration.test.ts:25:38
+     23|   const deadline = Date.now() + ms;
+     24|   while (!(await check())) {
+     25|     if (Date.now() > deadline) throw new Error(`timed out waiting for …
+       |                                      ^
+     26|     await wait(100);
+     27|   }
+ ❯ tests/chaos-variants.integration.test.ts:173:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 9 passed (10)
+   Start at  01:49:57
+   Duration  312.27s (tests 99%, import 1%)
+
