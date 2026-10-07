@@ -1,0 +1,52 @@
+time="2026-10-07T21:06:50Z" level=warning msg="Insufficient VUs, reached 500 active VUs and cannot initialize more" executor=constant-arrival-rate scenario=send
+time="2026-10-07T21:09:51Z" level=info msg="{\"completed\":31982,\"failed_total\":0,\"seconds\":182,\"end_to_end_per_minute\":10526,\"still_in_flight\":0}" source=console
+
+
+  █ THRESHOLDS 
+
+    checks
+    ✓ 'rate>0.99' rate=100.00%
+
+    http_req_duration{scenario:send}
+    ✗ 'p(95)<500' p(95)=1.03s
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 31982   174.977615/s
+    checks_succeeded...: 100.00% 31982 out of 31982
+    checks_failed......: 0.00%   0 out of 31982
+
+    ✓ accepted (201)
+
+    CUSTOM
+    notifications_accepted.........: 31982  174.977615/s
+
+    HTTP
+    http_req_duration..............: avg=922.47ms min=6.81ms  med=916.96ms max=2.4s p(90)=998.4ms  p(95)=1.03s
+      { expected_response:true }...: avg=922.47ms min=6.81ms  med=916.96ms max=2.4s p(90)=998.4ms  p(95)=1.03s
+      { scenario:send }............: avg=927.13ms min=68.99ms med=917.44ms max=2.4s p(90)=998.83ms p(95)=1.03s
+    http_req_failed................: 0.00%  0 out of 32150
+    http_reqs......................: 32150  175.896764/s
+
+    EXECUTION
+    dropped_iterations.............: 16019  87.641999/s
+    iteration_duration.............: avg=927.46ms min=70.99ms med=917.78ms max=2.4s p(90)=999.06ms p(95)=1.03s
+    iterations.....................: 31982  174.977615/s
+    vus............................: 0      min=0          max=500
+    vus_max........................: 500    min=170        max=500
+
+    NETWORK
+    data_received..................: 9.0 MB 49 kB/s
+    data_sent......................: 12 MB  67 kB/s
+
+
+
+time="2026-10-07T21:09:51Z" level=error msg="thresholds on metrics 'http_req_duration{scenario:send}' have been crossed"
+== postgres, counted after the run (throwaway database loadtest_4216)
+notifications delivered 31982
+attempts in_app sent 31982
+attempts mock-email sent 31982

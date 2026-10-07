@@ -151,7 +151,8 @@ describe('worker crash variants', () => {
   }, 240_000);
 
   // Same scenario as the original test but with the timings src/worker-runtime.ts ships (30 s lock, 30 s stall check), so recovery is the real, slower one.
-  it('with production timings (BullMQ default lock and stall intervals, sweeper 30 s / 60 s)', async () => {
+  // Opt-in (about 65 s): CHAOS_SLOW=1 npx vitest run tests/chaos-variants.integration.test.ts
+  it.skipIf(!process.env.CHAOS_SLOW)('with production timings (BullMQ default lock and stall intervals, sweeper 30 s / 60 s)', async () => {
     h = await harness();
     await h.seed(20);
     const a = h.worker({ SEND_DELAY_MS: '1500', PROD_TIMING: '1' });

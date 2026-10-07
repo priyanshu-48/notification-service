@@ -1,0 +1,9 @@
+# Idle baseline before load tests (2026-10-07T20:40:56Z)
+notification-service-postgres-1 cpu=0.00% mem=51.88MiB / 7.609GiB
+ai-course-backend cpu=1.27% mem=132.4MiB / 7.609GiB
+ai-course-redis cpu=0.46% mem=5.707MiB / 7.609GiB
+host CPU load % (avg of 5 samples): 8.2
+on AC power: True
+image sha256:0812692bf805e74db8a219393792e6f0cec9168c20b4569b5150acd74a6e6062 created 2026-10-07T12:13:19.339652508Z
+image sha256:b478068e75ac63e0d42a166066253eb5d37425ac539d70910b4eeff216647aec created 2026-10-07T20:41:43.972694692Z
+built from commit 5ecce7a (src/Dockerfile identical to 2198e13)

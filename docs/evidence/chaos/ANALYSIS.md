@@ -69,3 +69,6 @@ Raw logs: `variants/final-run1.log` to `final-run3.log`, `variants/final-status.
 
 ## Resume wording that these results support
 "Verified crash recovery with a chaos suite that SIGKILLs real worker processes mid-send (20 to 500 notifications in flight, single worker, one of two workers, all workers) and restarts Redis (including total queue loss), all with zero lost notifications and exactly one recorded delivery each; with production lock timings, recovery took about 1 minute."
+
+## Running the variants
+`npx vitest run tests/chaos-variants.integration.test.ts` runs 8 variants (about 1.5 minutes). The production-timing variant (about 65 s) is opt-in: `CHAOS_SLOW=1 npx vitest run tests/chaos-variants.integration.test.ts` (PowerShell: `$env:CHAOS_SLOW="1"` first). Its 3 passing runs above were done with it enabled.

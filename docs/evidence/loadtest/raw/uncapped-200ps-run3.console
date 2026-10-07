@@ -1,0 +1,16 @@
+== rate=200/s duration=60s cpus=unlimited memory=unlimited redis=separate
+time="2026-10-07T20:55:08Z" level=info msg="{\"completed\":12001,\"failed_total\":0,\"seconds\":64,\"end_to_end_per_minute\":11224,\"still_in_flight\":0}" source=console
+    checks
+    http_req_duration{scenario:send}
+    http_req_failed
+    checks_total.......: 12001   185.785451/s
+    checks_succeeded...: 100.00% 12001 out of 12001
+    checks_failed......: 0.00%   0 out of 12001
+    notifications_accepted.........: 12001  185.785451/s
+    http_req_duration..............: avg=27.39ms min=6.78ms  med=25.77ms max=125.31ms p(90)=34ms    p(95)=38.08ms
+    http_req_failed................: 0.00%  0 out of 12057
+== postgres, counted after the run (throwaway database loadtest_2075)
+notifications delivered 12001
+attempts in_app sent 12001
+attempts mock-email sent 12001
+== app container: cpu=0.41% mem=111.6MiB / 7.609GiB

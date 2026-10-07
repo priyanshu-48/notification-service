@@ -1,0 +1,10 @@
+uncapped-100ps-run1 exit 0
+uncapped-200ps-run1 exit 0
+uncapped-300ps-run1 exit 0
+uncapped-100ps-run2 exit 0
+uncapped-200ps-run2 exit 0
+uncapped-300ps-run2 exit 0
+uncapped-100ps-run3 exit 0
+uncapped-200ps-run3 exit 0
+uncapped-300ps-run3 exit 0
+DONE

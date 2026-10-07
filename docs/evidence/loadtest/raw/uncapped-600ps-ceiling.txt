@@ -1,0 +1,52 @@
+time="2026-10-07T21:03:26Z" level=warning msg="Insufficient VUs, reached 500 active VUs and cannot initialize more" executor=constant-arrival-rate scenario=send
+time="2026-10-07T21:06:23Z" level=info msg="{\"completed\":32145,\"failed_total\":0,\"seconds\":180,\"end_to_end_per_minute\":10718,\"still_in_flight\":0}" source=console
+
+
+  █ THRESHOLDS 
+
+    checks
+    ✓ 'rate>0.99' rate=100.00%
+
+    http_req_duration{scenario:send}
+    ✗ 'p(95)<500' p(95)=1.01s
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 32145   178.100813/s
+    checks_succeeded...: 100.00% 32145 out of 32145
+    checks_failed......: 0.00%   0 out of 32145
+
+    ✓ accepted (201)
+
+    CUSTOM
+    notifications_accepted.........: 32145  178.100813/s
+
+    HTTP
+    http_req_duration..............: avg=905.04ms min=6.92ms  med=909.4ms  max=1.13s p(90)=984.58ms p(95)=1.01s
+      { expected_response:true }...: avg=905.04ms min=6.92ms  med=909.4ms  max=1.13s p(90)=984.58ms p(95)=1.01s
+      { scenario:send }............: avg=909.53ms min=62.72ms med=909.65ms max=1.13s p(90)=984.95ms p(95)=1.01s
+    http_req_failed................: 0.00%  0 out of 32311
+    http_reqs......................: 32311  179.020543/s
+
+    EXECUTION
+    dropped_iterations.............: 3856   21.364341/s
+    iteration_duration.............: avg=909.99ms min=64.93ms med=909.89ms max=1.99s p(90)=985.8ms  p(95)=1.01s
+    iterations.....................: 32145  178.100813/s
+    vus............................: 0      min=0          max=500
+    vus_max........................: 500    min=116        max=500
+
+    NETWORK
+    data_received..................: 9.0 MB 50 kB/s
+    data_sent......................: 12 MB  69 kB/s
+
+
+
+time="2026-10-07T21:06:23Z" level=error msg="thresholds on metrics 'http_req_duration{scenario:send}' have been crossed"
+== postgres, counted after the run (throwaway database loadtest_3636)
+notifications delivered 32145
+attempts in_app sent 32145
+attempts mock-email sent 32145
