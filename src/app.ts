@@ -223,8 +223,11 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
   app.post('/v1/templates', async (request: FastifyRequest, reply) => {
     const tenantId = request.tenantId!;
     const input = createTemplate.parse(request.body);
+    // A name is unique per tenant. Saying so beats the generic 500 that a unique-index violation used to become.
     const [template] = await db.insert(templates).values({ tenantId, ...input })
+      .onConflictDoNothing({ target: [templates.tenantId, templates.name] })
       .returning({ id: templates.id, name: templates.name, subject: templates.subject, body: templates.body, variables: templates.variables, createdAt: templates.createdAt });
+    if (!template) return reply.code(409).send({ error: { code: 'TEMPLATE_EXISTS', message: `A template named "${input.name}" already exists for this tenant.` } });
     return reply.code(201).send(template);
   });
 
