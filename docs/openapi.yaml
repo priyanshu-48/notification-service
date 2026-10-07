@@ -1,0 +1,1011 @@
+openapi: 3.1.0
+info:
+  title: Notification Service API
+  version: 1.0.0
+  summary: Multi-tenant notifications over email and in-app real time, with a durable inbox.
+  description: |
+    Other apps call this API to notify their users. A notification is saved first and delivered asynchronously by a
+    worker, so every send returns `201` with status `queued`; read its status later or watch the real-time stream.
+
+    ## Authentication
+    Every `/v1` endpoint takes a tenant **API key** as `Authorization: Bearer ntf_live_...`. The tenant is taken from the key,
+    never from the request, so one tenant can never read or change another's data. Keep the key on your server. A browser
+    gets a short-lived **stream token** instead (see `POST /v1/users/{externalUserId}/stream-token` and `GET /stream`).
+
+    ## Errors
+    Every error is `{ "error": { "code": "...", "message": "..." } }`. Validation failures (`400 VALIDATION_ERROR`) also carry
+    `details`, a list of `{ path, message }`. Branch on `code`, not on `message`.
+
+    ## Delivery guarantee
+    At-least-once processing with deduplication, so a recipient sees each notification once. Send an `Idempotency-Key` header
+    on `POST /v1/notifications` and a retried call returns the original instead of sending again.
+
+    ## Rate limiting
+    Each tenant has a token bucket shared by every instance of the service. Over the limit the answer is `429` with a
+    `Retry-After` header (seconds). Back off and retry.
+
+    ## Recipients
+    Users are identified by **your own id** (`externalUserId`). Register them once with `PUT /v1/users/{externalUserId}`.
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://{host}
+    description: A deployed instance
+    variables:
+      host:
+        default: your-service.onrender.com
+tags:
+  - name: Notifications
+    description: Send a notification and follow it until it is delivered.
+  - name: Dead letters
+    description: Notifications whose delivery was abandoned, and replaying them.
+  - name: Users
+    description: The people you notify.
+  - name: Preferences
+    description: Per-user opt-outs and quiet hours. Quiet hours delay a notification; they never drop it.
+  - name: Inbox
+    description: What was delivered in-app, with read state.
+  - name: Real time
+    description: Live delivery to a user's open browser tabs.
+  - name: Templates
+    description: Reusable subjects and bodies with `{{variables}}`.
+  - name: Dashboard
+    description: Statistics and API key management (what the bundled dashboard uses).
+  - name: Operations
+    description: Health, readiness and metrics. Not under `/v1`.
+
+paths:
+  /v1/notifications:
+    post:
+      tags: [Notifications]
+      operationId: createNotification
+      summary: Send a notification
+      description: |
+        Saves the notification and queues it for delivery. Identify the recipient with exactly one of `userId` (the id returned
+        by `PUT /v1/users/...`) or `externalUserId` (your own id).
+
+        - `channels` defaults to `["email"]`. Use `in_app` for the real-time stream and the inbox.
+        - **Templates:** pass `templateName` and `variables`; every variable the template declares is required.
+        - **Digests:** give notifications for one user the same `digestKey` and they are delivered as a single "N new ..."
+          notification once `digestWindowSeconds` have passed since the first.
+        - **Idempotency:** with an `Idempotency-Key`, repeating the call returns the original notification (`200`, header
+          `Idempotent-Replayed: true`). Reusing the key with a different body is a `422`.
+        - **`503`:** the notification was saved but could not be queued; its id is in the response. Repeating the call with the
+          same `Idempotency-Key` queues it. The service also re-queues stuck notifications on its own.
+      security: [{ ApiKey: [] }]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationInput' }
+            examples:
+              inApp:
+                summary: An in-app alert
+                value:
+                  externalUserId: user-42
+                  type: limit
+                  payload: { title: You have spent 40 minutes on YouTube today }
+                  channels: [in_app]
+              templatedEmail:
+                summary: An email from a template
+                value:
+                  externalUserId: user-42
+                  type: welcome
+                  payload: {}
+                  templateName: welcome
+                  variables: { name: Sam }
+      responses:
+        '201':
+          description: Saved and queued.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedNotification' }
+        '200':
+          description: A call with this `Idempotency-Key` was already made; this is the original notification.
+          headers:
+            Idempotent-Replayed:
+              description: Always `true`.
+              schema: { type: string, enum: ['true'] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedNotification' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: A request with this `Idempotency-Key` was in flight at the same moment. Retry.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: |
+            The request is well formed but cannot be done. `code` is `USER_NOT_FOUND`, `TEMPLATE_NOT_FOUND`,
+            `MISSING_TEMPLATE_VARIABLES` or `IDEMPOTENCY_KEY_REUSED`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503':
+          description: Saved, but the queue was unavailable. See the description of this operation.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QueueUnavailable' }
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      summary: List notifications, newest first
+      description: Pages with a cursor. Pass `nextBefore` from one page as `before` on the next; it is `null` on the last page.
+      security: [{ ApiKey: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/NotificationStatus' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - name: before
+          in: query
+          description: Only notifications created before this time.
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: One page of notifications.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notifications, nextBefore]
+                properties:
+                  notifications:
+                    type: array
+                    items: { $ref: '#/components/schemas/NotificationSummary' }
+                  nextBefore:
+                    type: [string, 'null']
+                    format: date-time
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/notifications/{id}:
+    get:
+      tags: [Notifications]
+      operationId: getNotification
+      summary: Get a notification and every delivery attempt
+      security: [{ ApiKey: [] }]
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          description: The notification and its delivery attempts, oldest first.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationDetail' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/notifications/{id}/replay:
+    post:
+      tags: [Dead letters]
+      operationId: replayNotification
+      summary: Re-queue a failed notification
+      description: Only a notification in the dead-letter set (status `failed`) can be replayed. Its attempt counter starts again.
+      security: [{ ApiKey: [] }]
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '202':
+          description: Re-queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, status]
+                properties:
+                  id: { type: string, format: uuid }
+                  status: { type: string, enum: [queued] }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The notification is not failed (`NOT_REPLAYABLE`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503':
+          description: Marked as queued but the queue was unavailable; the service re-queues it on its own shortly.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QueueUnavailable' }
+
+  /v1/dead-letters:
+    get:
+      tags: [Dead letters]
+      operationId: listDeadLetters
+      summary: List notifications whose delivery was abandoned
+      description: |
+        A notification lands here after a permanent error (no recipient email, missing template, a provider 4xx) or after all
+        5 attempts failed. Newest first, at most 100.
+      security: [{ ApiKey: [] }]
+      responses:
+        '200':
+          description: The dead-letter set.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notifications]
+                properties:
+                  notifications:
+                    type: array
+                    items: { $ref: '#/components/schemas/DeadLetter' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/users/{externalUserId}:
+    parameters:
+      - $ref: '#/components/parameters/ExternalUserId'
+    put:
+      tags: [Users]
+      operationId: upsertUser
+      summary: Create or update a user
+      description: Safe to repeat. Returns the user, including the service's own `id`.
+      security: [{ ApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              additionalProperties: false
+              properties:
+                email: { type: string, format: email, maxLength: 320 }
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    delete:
+      tags: [Users]
+      operationId: deleteUser
+      summary: Erase a user and everything held about them
+      description: |
+        Removes the user and, with them, their notifications, delivery attempts and preferences. Answers `204` also when
+        repeated and when the user was never registered, so it is safe to retry. It only reaches users of the calling
+        tenant. Notifications already queued for the user are skipped; an open stream stops receiving anything.
+      security: [{ ApiKey: [] }]
+      responses:
+        '204': { description: "Erased, or there was nothing to erase." }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/users/{externalUserId}/preferences:
+    parameters:
+      - $ref: '#/components/parameters/ExternalUserId'
+    get:
+      tags: [Preferences]
+      operationId: getPreferences
+      summary: Get a user's preferences
+      security: [{ ApiKey: [] }]
+      responses:
+        '200':
+          description: The user's preferences (an empty list means every default applies).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/UserNotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    put:
+      tags: [Preferences]
+      operationId: setPreferences
+      summary: Replace a user's preferences
+      description: |
+        Replaces the whole set, so it is idempotent and removing a row means "back to the default". `channel` is `email`,
+        `in_app` or `*`; `type` is a notification type or `*`. The most specific matching row decides `enabled` (an exact
+        channel beats an exact type beats the wildcards); quiet hours come from the most specific row that defines them.
+        A channel that is opted out is skipped, and if nothing is delivered the notification ends as `suppressed`.
+        During quiet hours a notification waits until the window ends.
+      security: [{ ApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreferencesInput' }
+            examples:
+              nightsAndPromos:
+                value:
+                  preferences:
+                    - { channel: '*', type: '*', quietHours: { start: '22:00', end: '07:00', timezone: Asia/Kolkata } }
+                    - { channel: email, type: newsletter, enabled: false }
+      responses:
+        '200':
+          description: The preferences as saved, with defaults filled in.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/UserNotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/users/{externalUserId}/inbox:
+    parameters:
+      - $ref: '#/components/parameters/ExternalUserId'
+    get:
+      tags: [Inbox]
+      operationId: getInbox
+      summary: A user's inbox, newest first
+      description: |
+        What was actually delivered in-app (the latest 50). Notifications held back by a digest window or quiet hours do not
+        appear early, and members of a digest appear only through the combined notification (`count` > 1).
+      security: [{ ApiKey: [] }]
+      responses:
+        '200':
+          description: The inbox.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notifications]
+                properties:
+                  notifications:
+                    type: array
+                    items: { $ref: '#/components/schemas/InboxItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/UserNotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/users/{externalUserId}/inbox/{id}/read:
+    parameters:
+      - $ref: '#/components/parameters/ExternalUserId'
+      - $ref: '#/components/parameters/NotificationId'
+    post:
+      tags: [Inbox]
+      operationId: markRead
+      summary: Mark an inbox item as read
+      description: "Idempotent: the first read time is kept."
+      security: [{ ApiKey: [] }]
+      responses:
+        '204': { description: "Marked as read." }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: The user (`USER_NOT_FOUND`) or the notification (`NOTIFICATION_NOT_FOUND`) does not exist.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/users/{externalUserId}/stream-token:
+    parameters:
+      - $ref: '#/components/parameters/ExternalUserId'
+    post:
+      tags: [Real time]
+      operationId: createStreamToken
+      summary: Mint a token for a user's browser to open the stream
+      description: |
+        Call this from **your backend** for a user you have authenticated, and give the token to that user's browser. It is
+        valid for one hour and cannot be revoked earlier. The browser never sees your API key.
+      security: [{ ApiKey: [] }]
+      responses:
+        '200':
+          description: The token.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StreamToken' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/UserNotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /stream:
+    get:
+      tags: [Real time]
+      operationId: openStream
+      summary: WebSocket stream of a user's notifications
+      description: |
+        Not a plain HTTP call: open it as a **WebSocket** at `ws(s)://host/stream?token=...`. OpenAPI cannot describe a
+        socket's messages, so they are specified here and as schemas under `components`.
+
+        An invalid or expired token is accepted and then closed at once with close code **4401**.
+
+        **Server to client** (JSON text frames):
+        - `StreamInbox`: sent first on every connect: the inbox, newest first.
+        - `StreamNotification`: a new notification, pushed live. The same notification can arrive in the inbox replay and as a
+          live push, so de-duplicate by `id`.
+        - `StreamReadAck`: the answer to a read request.
+
+        **Client to server:** `StreamReadRequest`, to mark one item read.
+
+        The SDK in this repository (`sdk/`, `NotificationStream`) implements all of this, including reconnecting with a
+        fresh token.
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          description: A token from `POST /v1/users/{externalUserId}/stream-token`.
+          schema: { type: string }
+      responses:
+        '101': { description: "Switching Protocols. The WebSocket is open." }
+
+  /v1/templates:
+    post:
+      tags: [Templates]
+      operationId: createTemplate
+      summary: Create a template
+      description: |
+        `{{name}}` placeholders in `subject` and `body` are replaced when the notification is delivered; `body` substitutions are
+        HTML-escaped. List the variables that must be supplied in `variables`.
+      security: [{ ApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TemplateInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Template' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: A template with this name already exists for the tenant (`TEMPLATE_EXISTS`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    get:
+      tags: [Templates]
+      operationId: listTemplates
+      summary: List the tenant's templates
+      security: [{ ApiKey: [] }]
+      responses:
+        '200':
+          description: The templates.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [templates]
+                properties:
+                  templates:
+                    type: array
+                    items: { $ref: '#/components/schemas/Template' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/stats:
+    get:
+      tags: [Dashboard]
+      operationId: getStats
+      summary: Counts by status and by delivery result
+      security: [{ ApiKey: [] }]
+      parameters:
+        - name: hours
+          in: query
+          description: How far back to count, by creation time.
+          schema: { type: integer, minimum: 1, maximum: 2160, default: 24 }
+      responses:
+        '200':
+          description: The counts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Stats' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/api-keys:
+    get:
+      tags: [Dashboard]
+      operationId: listApiKeys
+      summary: List the tenant's API keys
+      description: Only ids and dates. A key's secret is shown once, when it is created.
+      security: [{ ApiKey: [] }]
+      responses:
+        '200':
+          description: The keys, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [apiKeys]
+                properties:
+                  apiKeys:
+                    type: array
+                    items: { $ref: '#/components/schemas/ApiKey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+    post:
+      tags: [Dashboard]
+      operationId: createApiKey
+      summary: Create an API key
+      description: The plaintext `key` is returned **once**. Only its hash is stored.
+      security: [{ ApiKey: [] }]
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedApiKey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/api-keys/{id}:
+    delete:
+      tags: [Dashboard]
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      description: Repeating it is fine. The last active key cannot be revoked, so a tenant can never lock itself out.
+      security: [{ ApiKey: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: "Revoked." }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: The key does not exist for this tenant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: It is the last active key (`LAST_ACTIVE_KEY`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /health:
+    get:
+      tags: [Operations]
+      operationId: health
+      summary: The process is up
+      security: []
+      responses:
+        '200':
+          description: Up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [ok] }
+
+  /ready:
+    get:
+      tags: [Operations]
+      operationId: ready
+      summary: Postgres and Redis both answer
+      description: Each check gives up after `READY_TIMEOUT_MS` (default 2 s), so a dead dependency is reported, not waited on.
+      security: []
+      responses:
+        '200':
+          description: Ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ready' }
+        '503':
+          description: At least one dependency is down; `checks` says which.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ready' }
+
+  /metrics:
+    get:
+      tags: [Operations]
+      operationId: metrics
+      summary: Prometheus metrics
+      description: |
+        Notification counts by status (from Postgres, all tenants), queue depth, request latency by route and Node process
+        metrics. Protected by `METRICS_TOKEN` when the server has one set; open otherwise.
+      security: [{}, { MetricsToken: [] }]
+      responses:
+        '200':
+          description: Prometheus text format.
+          content:
+            text/plain:
+              schema: { type: string }
+        '401':
+          description: A token is required and was missing or wrong.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+components:
+  securitySchemes:
+    ApiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: ntf_live_...
+      description: A tenant API key. Create the first with `npm run provision:tenant`, more with `POST /v1/api-keys`.
+    MetricsToken:
+      type: http
+      scheme: bearer
+      description: The server's `METRICS_TOKEN`.
+
+  parameters:
+    ExternalUserId:
+      name: externalUserId
+      in: path
+      required: true
+      description: Your own id for the user (1 to 255 characters, URL-encoded).
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    NotificationId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Any string of 1 to 255 characters, unique per logical send (for example `streak:user-42:2026-01-01`). Stored for good.
+      schema: { type: string, minLength: 1, maxLength: 255 }
+
+  responses:
+    ValidationError:
+      description: The request failed validation (`VALIDATION_ERROR`, with `details`) or could not be parsed (`BAD_REQUEST`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+    Unauthorized:
+      description: The API key is missing, wrong or revoked (`UNAUTHORIZED`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No such notification for this tenant (`NOT_FOUND`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UserNotFound:
+      description: No such user for this tenant (`USER_NOT_FOUND`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Too many requests for this tenant (`RATE_LIMITED`).
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, examples: [UNAUTHORIZED] }
+            message: { type: string }
+    ValidationError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, enum: [VALIDATION_ERROR, BAD_REQUEST] }
+            message: { type: string }
+            details:
+              type: array
+              items:
+                type: object
+                required: [path, message]
+                properties:
+                  path:
+                    type: array
+                    items: { type: [string, integer] }
+                  message: { type: string }
+    QueueUnavailable:
+      type: object
+      required: [id, error]
+      properties:
+        id: { type: string, format: uuid }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, enum: [QUEUE_UNAVAILABLE] }
+            message: { type: string }
+
+    Channel:
+      type: string
+      enum: [email, in_app]
+    NotificationStatus:
+      type: string
+      description: |
+        `queued`, `sending`, then `delivered`. `failed` is the dead-letter set. `batched`: absorbed into a digest, finishes
+        with its combined notification. `suppressed`: every channel was opted out.
+      enum: [queued, sending, delivered, failed, batched, suppressed]
+
+    NotificationInput:
+      type: object
+      additionalProperties: false
+      required: [type, payload]
+      description: Exactly one of `userId` and `externalUserId` is required.
+      oneOf:
+        - required: [userId]
+        - required: [externalUserId]
+      properties:
+        userId: { type: string, format: uuid, description: "The `id` returned by `PUT /v1/users/{externalUserId}`." }
+        externalUserId: { type: string, minLength: 1, maxLength: 255, description: "Your own id for the user." }
+        type:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Your name for the kind of notification. Preferences and digests match on it.
+        payload:
+          type: object
+          description: Free-form data. For email without a template, `subject` and `body` (HTML) are used if present. Shown in the inbox.
+        channels:
+          type: array
+          minItems: 1
+          default: [email]
+          items: { $ref: '#/components/schemas/Channel' }
+        templateName: { type: string, minLength: 1, maxLength: 100 }
+        variables: { type: object, description: "Values for the template's `{{variables}}`." }
+        digestKey: { type: string, minLength: 1, maxLength: 200 }
+        digestWindowSeconds: { type: integer, minimum: 10, maximum: 86400, default: 300 }
+    CreatedNotification:
+      type: object
+      required: [id, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/NotificationStatus' }
+        createdAt: { type: string, format: date-time }
+    NotificationSummary:
+      type: object
+      required: [id, type, status, channels, attempts, digestCount, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        status: { $ref: '#/components/schemas/NotificationStatus' }
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/Channel' }
+        attempts: { type: integer, description: "Delivery attempts so far." }
+        digestCount: { type: integer, minimum: 1, description: "How many notifications this one stands for (1 unless it is a digest)." }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    DeliveryAttempt:
+      type: object
+      required: [channel, status, error, attemptedAt]
+      properties:
+        channel: { type: string, description: '`in_app`, or the email provider that was used.' }
+        status: { type: string, enum: [pending, sent, failed, skipped] }
+        error: { type: [string, 'null'], description: "Why it failed, or why it was skipped (`recipient opted out`)." }
+        attemptedAt: { type: string, format: date-time }
+    NotificationDetail:
+      type: object
+      required: [id, type, status, channels, attempts, createdAt, updatedAt, deliveryAttempts]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        status: { $ref: '#/components/schemas/NotificationStatus' }
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/Channel' }
+        attempts: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        deliveryAttempts:
+          type: array
+          items: { $ref: '#/components/schemas/DeliveryAttempt' }
+    DeadLetter:
+      type: object
+      required: [id, type, attempts, failedAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        attempts: { type: integer }
+        failedAt: { type: string, format: date-time }
+
+    User:
+      type: object
+      required: [id, externalUserId, email]
+      properties:
+        id: { type: string, format: uuid }
+        externalUserId: { type: string }
+        email: { type: string, format: email }
+
+    QuietHours:
+      type: object
+      additionalProperties: false
+      required: [start, end, timezone]
+      description: A daily window, which may wrap midnight. Notifications during it wait until it ends.
+      properties:
+        start: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', examples: ['22:00'] }
+        end: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', examples: ['07:00'] }
+        timezone: { type: string, description: "An IANA time zone name.", examples: [Asia/Kolkata] }
+    PreferenceInput:
+      type: object
+      additionalProperties: false
+      required: [channel, type]
+      properties:
+        channel: { type: string, enum: [email, in_app, '*'] }
+        type: { type: string, minLength: 1, maxLength: 100, description: "A notification type, or `*` for all." }
+        enabled: { type: boolean, default: true }
+        quietHours:
+          oneOf:
+            - $ref: '#/components/schemas/QuietHours'
+            - type: 'null'
+    Preference:
+      type: object
+      required: [channel, type, enabled, quietHours]
+      properties:
+        channel: { type: string, enum: [email, in_app, '*'] }
+        type: { type: string }
+        enabled: { type: boolean }
+        quietHours:
+          oneOf:
+            - $ref: '#/components/schemas/QuietHours'
+            - type: 'null'
+    PreferencesInput:
+      type: object
+      additionalProperties: false
+      required: [preferences]
+      properties:
+        preferences:
+          type: array
+          maxItems: 100
+          description: Each channel and type pair may appear once.
+          items: { $ref: '#/components/schemas/PreferenceInput' }
+    Preferences:
+      type: object
+      required: [preferences]
+      properties:
+        preferences:
+          type: array
+          items: { $ref: '#/components/schemas/Preference' }
+
+    InboxItem:
+      type: object
+      required: [id, type, payload, count, createdAt, readAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        payload: { type: object }
+        count: { type: integer, minimum: 1, description: "More than 1 for a digest (\"3 new comments\")." }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: [string, 'null'], format: date-time }
+    StreamToken:
+      type: object
+      required: [token, expiresAt]
+      properties:
+        token: { type: string }
+        expiresAt: { type: string, format: date-time }
+    StreamInbox:
+      type: object
+      required: [type, notifications]
+      description: First frame on every connect.
+      properties:
+        type: { type: string, enum: [inbox] }
+        notifications:
+          type: array
+          items: { $ref: '#/components/schemas/InboxItem' }
+    StreamNotification:
+      type: object
+      required: [type, notification]
+      description: A notification pushed live.
+      properties:
+        type: { type: string, enum: [notification] }
+        notification: { $ref: '#/components/schemas/InboxItem' }
+    StreamReadRequest:
+      type: object
+      required: [type, id]
+      description: Sent by the client.
+      properties:
+        type: { type: string, enum: [read] }
+        id: { type: string, format: uuid }
+    StreamReadAck:
+      type: object
+      required: [type, id, ok]
+      description: The server's answer to a read request.
+      properties:
+        type: { type: string, enum: [read] }
+        id: { type: string, format: uuid }
+        ok: { type: boolean }
+
+    Template:
+      type: object
+      required: [id, name, subject, body, variables, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        subject: { type: [string, 'null'] }
+        body: { type: string }
+        variables:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+    TemplateInput:
+      type: object
+      additionalProperties: false
+      required: [name, body]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, description: "Unique per tenant." }
+        subject: { type: string, maxLength: 998 }
+        body: { type: string, minLength: 1 }
+        variables:
+          type: array
+          default: []
+          description: Names that must be supplied when sending.
+          items: { type: string, pattern: '^[a-zA-Z_][\w.-]*$' }
+
+    Stats:
+      type: object
+      required: [since, notifications, attempts]
+      properties:
+        since: { type: string, format: date-time }
+        notifications:
+          type: object
+          required: [queued, sending, delivered, failed, batched, suppressed]
+          description: How many notifications created since then are in each status.
+          properties:
+            queued: { type: integer }
+            sending: { type: integer }
+            delivered: { type: integer }
+            failed: { type: integer }
+            batched: { type: integer }
+            suppressed: { type: integer }
+        attempts:
+          type: array
+          items:
+            type: object
+            required: [channel, status, count]
+            properties:
+              channel: { type: string }
+              status: { type: string }
+              count: { type: integer }
+    ApiKey:
+      type: object
+      required: [id, createdAt, revokedAt]
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+    CreatedApiKey:
+      type: object
+      required: [id, createdAt, key]
+      properties:
+        id: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        key: { type: string, description: "The secret. Shown once; store it now." }
+
+    Ready:
+      type: object
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ready, degraded] }
+        checks:
+          type: object
+          required: [postgres, redis]
+          properties:
+            postgres: { type: boolean }
+            redis: { type: boolean }

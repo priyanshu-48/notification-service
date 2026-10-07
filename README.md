@@ -92,6 +92,10 @@ Add `"channels": ["in_app"]` (or `["email", "in_app"]`; default `["email"]`) to 
 
 Open `/demo` in a browser, paste a token, and send notifications to watch them appear live and survive a refresh. The token is in the query string, so request logs redact it.
 
+## API reference
+
+The full API is described in [docs/openapi.yaml](docs/openapi.yaml) (OpenAPI 3.1): every endpoint, its parameters, request and response bodies, status codes and error codes, plus the WebSocket stream's messages. Open it in any OpenAPI viewer, for example by pasting it into the [Swagger Editor](https://editor.swagger.io/). Tests keep it honest: they fail if a route is added or removed without updating the spec, and they send real requests and check every response against its documented schema.
+
 ## API response
 
 Successful creation returns `201` with `id`, `status: "queued"`, and `createdAt`. Errors use `{ "error": { "code": "...", "message": "..." } }`; malformed input returns `400`, missing/invalid credentials `401`, and a user not found within the tenant `422`.
