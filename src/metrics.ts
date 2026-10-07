@@ -9,15 +9,16 @@ import type { NotificationQueue } from './queue.js';
 type Database = NodePgDatabase<typeof schema>;
 
 // The queue's Redis connection retries forever by design, so a dead Redis would hang a health check or scrape instead of failing it.
-const checkTimeoutMs = 2000;
-const withTimeout = <T>(work: Promise<T>): Promise<T> => Promise.race([
-  work, new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('timed out')), checkTimeoutMs).unref()),
+// READY_TIMEOUT_MS (default 2000) can be raised for databases that suspend when idle and take a few seconds to wake.
+const timeoutAfter = (ms: number) => <T>(work: Promise<T>): Promise<T> => Promise.race([
+  work, new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('timed out')), ms).unref()),
 ]);
 
 // /ready: can this instance do useful work? (/health only says the process is up.) Used by deploy platforms to gate traffic.
 // /metrics: Prometheus text format. Outcome counts come from Postgres and queue depth from Redis, so one scrape of the API
 // describes the whole system even when the worker runs as a separate process.
 export function registerOperations(app: FastifyInstance, db: Database, queue: NotificationQueue, metricsToken?: string): void {
+  const withTimeout = timeoutAfter(Number(process.env.READY_TIMEOUT_MS) || 2000);
   const registry = new Registry();
   collectDefaultMetrics({ register: registry });
 
