@@ -1,0 +1,15 @@
+# E.1 CI (captured 2026-10-07T19:58:21Z)
+$ gh run list --branch main --limit 5 --json databaseId,headSha,conclusion,status,url,createdAt
+[{"conclusion":"success","createdAt":"2026-10-07T16:25:45Z","databaseId":37651947230,"headSha":"2198e1382c291a42109712943791e616d197dd19","status":"completed","url":"https://github.com/priyanshu-48/notification-service/actions/runs/37651947230"},{"conclusion":"success","createdAt":"2026-10-07T15:24:23Z","databaseId":37643637283,"headSha":"c4421b60dfca407692185e9659188d381a5ed616","status":"completed","url":"https://github.com/priyanshu-48/notification-service/actions/runs/37643637283"},{"conclusion":"success","createdAt":"2026-10-07T13:00:42Z","databaseId":37625189076,"headSha":"88c1c350a19faae72a2070aa20822efdfec93d03","status":"completed","url":"https://github.com/priyanshu-48/notification-service/actions/runs/37625189076"},{"conclusion":"success","createdAt":"2026-10-04T14:35:11Z","databaseId":37209799288,"headSha":"5e73e62ccea61c46005adff6de2992dbf45a8b40","status":"completed","url":"https://github.com/priyanshu-48/notification-service/actions/runs/37209799288"},{"conclusion":"success","createdAt":"2026-10-04T13:31:16Z","databaseId":37205911414,"headSha":"cc3d57b2d25846ad0de1d77699b6634f11e06cd0","status":"completed","url":"https://github.com/priyanshu-48/notification-service/actions/runs/37205911414"}]
+
+$ steps in .github/workflows/ci.yml
+7:    runs-on: ubuntu-latest
+10:        image: postgres:17-alpine
+22:      - uses: actions/checkout@v4
+23:      - uses: actions/setup-node@v4
+26:      - run: npm install
+27:      - run: npm run lint
+28:      - run: npm run build
+29:      - run: npm run dashboard:build
+30:      - run: npm test
+31:      - run: npm run sdk:build

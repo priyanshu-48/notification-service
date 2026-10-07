@@ -1,0 +1,21 @@
+# A.2 container usage per test file (commit 2198e13, 2026-10-07)
+$ for f in tests/*.test.ts; grep PostgreSqlContainer / GenericContainer(redis)
+tests/app.test.ts postgres=0 redis=0
+tests/chaos.integration.test.ts postgres=1 redis=1
+tests/delete-user.integration.test.ts postgres=1 redis=0
+tests/key.test.ts postgres=0 redis=0
+tests/openapi.integration.test.ts postgres=1 redis=0
+tests/openapi.test.ts postgres=0 redis=0
+tests/operations.test.ts postgres=0 redis=0
+tests/phase2.integration.test.ts postgres=1 redis=1
+tests/phase3.integration.test.ts postgres=1 redis=1
+tests/phase4.integration.test.ts postgres=1 redis=1
+tests/phase5.integration.test.ts postgres=1 redis=0
+tests/preferences.test.ts postgres=0 redis=0
+tests/sdk.integration.test.ts postgres=1 redis=1
+tests/sdk.test.ts postgres=0 redis=0
+tests/state-machine.test.ts postgres=0 redis=0
+tests/stream-token.test.ts postgres=0 redis=0
+
+files with postgres: 8; with redis: 5; both: 5
+total test files: 16
