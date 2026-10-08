@@ -1,0 +1,51 @@
+time="2026-10-07T21:17:53Z" level=info msg="{\"completed\":1196,\"failed_total\":0,\"seconds\":91,\"end_to_end_per_minute\":787,\"still_in_flight\":0}" source=console
+
+
+  █ THRESHOLDS 
+
+    checks
+    ✓ 'rate>0.99' rate=100.00%
+
+    http_req_duration{scenario:send}
+    ✗ 'p(95)<500' p(95)=2.42s
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 1196    12.871088/s
+    checks_succeeded...: 100.00% 1196 out of 1196
+    checks_failed......: 0.00%   0 out of 1196
+
+    ✓ accepted (201)
+
+    CUSTOM
+    notifications_accepted.........: 1196   12.871088/s
+
+    HTTP
+    http_req_duration..............: avg=871.56ms min=7.36ms  med=679.85ms max=3.92s p(90)=1.88s p(95)=2.38s
+      { expected_response:true }...: avg=871.56ms min=7.36ms  med=679.85ms max=3.92s p(90)=1.88s p(95)=2.38s
+      { scenario:send }............: avg=922.97ms min=85.4ms  med=683.92ms max=3.92s p(90)=2s    p(95)=2.42s
+    http_req_failed................: 0.00%  0 out of 1274
+    http_reqs......................: 1274   13.710507/s
+
+    EXECUTION
+    dropped_iterations.............: 5      0.053809/s
+    iteration_duration.............: avg=923.45ms min=88.41ms med=684.31ms max=3.93s p(90)=2s    p(95)=2.43s
+    iterations.....................: 1196   12.871088/s
+    vus............................: 0      min=0         max=53
+    vus_max........................: 55     min=50        max=55
+
+    NETWORK
+    data_received..................: 359 kB 3.9 kB/s
+    data_sent......................: 475 kB 5.1 kB/s
+
+
+
+time="2026-10-07T21:17:53Z" level=error msg="thresholds on metrics 'http_req_duration{scenario:send}' have been crossed"
+== postgres, counted after the run (throwaway database loadtest_5742)
+notifications delivered 1196
+attempts in_app sent 1196
+attempts mock-email sent 1196

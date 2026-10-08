@@ -1,0 +1,4 @@
+# A.1 clean checkout (git worktree of 2198e13, npm ci), vitest run x3, 2026-10-07
+run1 files 16 total 86 passed 86 failed 0 pending 0 not-passed: []
+run2 files 16 total 86 passed 86 failed 0 pending 0 not-passed: []
+run3 files 16 total 86 passed 86 failed 0 pending 0 not-passed: []

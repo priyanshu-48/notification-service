@@ -1,0 +1,18 @@
+== rate=40/s duration=60s cpus=0.1 memory=512m redis=separate
+time="2026-10-07T21:48:05Z" level=info msg="{\"completed\":2164,\"failed_total\":0,\"seconds\":129,\"end_to_end_per_minute\":1010,\"still_in_flight\":0}" source=console
+    checks
+    http_req_duration{scenario:send}
+    http_req_failed
+    checks_total.......: 2164    16.645471/s
+    checks_succeeded...: 100.00% 2164 out of 2164
+    checks_failed......: 0.00%   0 out of 2164
+    notifications_accepted.........: 2164   16.645471/s
+    http_req_duration..............: avg=4.9s  min=6.04ms   med=5.35s max=8.25s p(90)=7.26s p(95)=7.82s
+    http_req_failed................: 0.00%  0 out of 2274
+    dropped_iterations.............: 237    1.823002/s
+time="2026-10-07T21:48:05Z" level=error msg="thresholds on metrics 'http_req_duration{scenario:send}' have been crossed"
+== postgres, counted after the run (throwaway database loadtest_10618)
+notifications delivered 2164
+attempts in_app sent 2164
+attempts mock-email sent 2164
+== app container: cpu=0.57% mem=50.16MiB / 512MiB

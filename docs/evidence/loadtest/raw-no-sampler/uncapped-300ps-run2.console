@@ -1,0 +1,13 @@
+== rate=300/s duration=60s cpus=unlimited memory=unlimited redis=separate
+time="2026-10-07T22:02:33Z" level=info msg="{\"completed\":17987,\"failed_total\":0,\"seconds\":108,\"end_to_end_per_minute\":10006,\"still_in_flight\":0}" source=console
+    checks
+    http_req_duration{scenario:send}
+    http_req_failed
+    checks_total.......: 17987   165.856029/s
+    checks_succeeded...: 100.00% 17987 out of 17987
+    checks_failed......: 0.00%   0 out of 17987
+    notifications_accepted.........: 17987  165.856029/s
+    http_req_duration..............: avg=47.9ms  min=9.06ms  med=42.21ms max=386.45ms p(90)=59.65ms p(95)=80.83ms
+    http_req_failed................: 0.00%  0 out of 18085
+    dropped_iterations.............: 14     0.129092/s
+== app container: cpu=0.57% mem=134.7MiB / 7.609GiB

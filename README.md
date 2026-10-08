@@ -147,28 +147,34 @@ What was measured, how, and what it does **not** show. The k6 script is [loadtes
 
 **Hardware.** Intel Core i7-12700H laptop (14 cores, 20 threads), 15.7 GB RAM, Windows 11, Docker Desktop (20 vCPUs, 8 GB). The app container was either uncapped or limited to `--cpus=0.1 --memory=512m`, which is Render's free instance size. Postgres was an uncapped container on the same machine (no network latency to the app). Redis was either an uncapped separate container, or embedded inside the capped app container as it is in the Render deployment, where it shares the 0.1 CPU.
 
-| Container | Redis | Arrival rate | Accepted / delivered | Lost or failed | API p95 latency | Notes |
+Median of 3 runs per row, range in brackets. Raw output for every run: [docs/evidence/loadtest/](docs/evidence/loadtest/), method and caveats: [loadtest/RESULTS.md](loadtest/RESULTS.md). Run on 2026-10-07/08 at commit `2198e13`'s code.
+
+| Container | Redis | Arrival rate | Accepted (= delivered) | Lost or failed | API p95 latency | Notes |
 |---|---|---|---|---|---|---|
-| uncapped | separate | 100/s (6,000/min) | 6,000 / 6,000 | 0 | 15 ms | kept up |
-| uncapped | separate | 200/s (12,000/min) | 12,001 / 12,001 | 0 | 18 ms | kept up |
-| uncapped | separate | 300/s (18,000/min) | 18,001 / 18,001 | 0 | 24 ms | kept up; ceiling not reached |
-| 0.1 CPU, 512 MB | separate | 10/s (600/min) | 600 / 600 | 0 | 879 ms | |
-| 0.1 CPU, 512 MB | separate | 20/s (1,200/min) | 1,201 / 1,201 | 0 | 1.46 s | everything delivered by the end of the run |
-| 0.1 CPU, 512 MB | separate | 40/s (2,400/min) | 2,242 / 2,242 (of 2,400 offered) | 0 | 5.5 s | overloaded; queue drained by 128 s |
-| 0.1 CPU, 512 MB | **embedded (as deployed)** | 10/s (600/min) | 601 / 601 | 0 | 976 ms | |
-| 0.1 CPU, 512 MB | **embedded (as deployed)** | 20/s (1,200/min) | 1,196 / 1,196 (of 1,200 offered) | 0 | 2.24 s | queue drained by 92 s |
-| 0.1 CPU, 512 MB | **embedded (as deployed)** | 40/s (2,400/min) | 2,075 / 2,075 (of 2,400 offered) | 0 | 10.2 s | overloaded; queue drained by 137 s |
+| uncapped | separate | 100/s (6,000/min) | 6,001 (6,000-6,001) | 0 | 18-22 ms | kept up |
+| uncapped | separate | 200/s (12,000/min) | 12,000-12,001 | 0 | 30-72 ms | kept up |
+| uncapped | separate | 300/s (18,000/min) | 17,987-18,001 | 0 | 46-81 ms | API kept up; the queue then took about 30 to 48 s longer to drain |
+| 0.1 CPU, 512 MB | separate | 10/s (600/min) | 601 (601-601) | 0 | 881 ms (791-1,070) | |
+| 0.1 CPU, 512 MB | separate | 20/s (1,200/min) | 1,201 (1,198-1,201) | 0 | 2.03 s (1.71-2.03) | |
+| 0.1 CPU, 512 MB | separate | 40/s (2,400/min) | 2,164 (2,117-2,198) of 2,400 offered | 0 | 7.8 s (6.6-9.1) | overloaded; drained by about 130 s |
+| 0.1 CPU, 512 MB | **embedded (as deployed)** | 10/s (600/min) | 601 (600-601) | 0 | 892 ms (870-1,080) | |
+| 0.1 CPU, 512 MB | **embedded (as deployed)** | 20/s (1,200/min) | 1,198 (1,196-1,199) of 1,200 offered | 0 | 2.13 s (2.04-2.42) | |
+| 0.1 CPU, 512 MB | **embedded (as deployed)** | 40/s (2,400/min) | 2,128 (2,101-2,139) of 2,400 offered | 0 | 8.5 s (8.4-9.6) | overloaded; drained by about 135 s |
+
+The uncapped latency is a range over 6 runs per rate (3 with and 3 without the CPU sampler used for evidence), because it varied from run to run on this laptop. An earlier single run of this benchmark reported 15, 18 and 24 ms at 100, 200 and 300/s; those numbers could **not** be reproduced and are superseded by the ones above.
+
+Beyond 300/s (single runs, same method): the API accepted 23,934 of 24,000 offered at 400/s (p95 140 ms), 29,786 of 30,000 at 500/s (p95 440 ms), and about 32,000 at both 600/s and 800/s (p95 about 1 s, the rest dropped by the load generator). Nothing accepted was ever lost or failed.
 
 **What this shows.**
-- On an unconstrained machine one process sustained **18,000 notifications per minute** end to end with a 24 ms p95 and nothing lost. The test never found its limit; the load generator shares the same machine.
-- On a Render-free-sized CPU allocation the system handles roughly **900 notifications per minute** (about 15 per second) in the deployed configuration, with API, worker and Redis all sharing that one 0.1 CPU. A separate Redis raised that to about 1,050 per minute, so embedding Redis costs roughly 15 to 25% of capacity at this size. Latency degrades first and badly (p95 above 2 s at 1,200 per minute). Overload showed up as latency and a slower drain, **never as lost or failed notifications**.
-- The crash test in [tests/chaos.integration.test.ts](tests/chaos.integration.test.ts) separately shows no loss or duplication when a worker is killed mid-send.
+- On an unconstrained machine one process **accepted up to about 18,000 notifications per minute (300/s) with p95 between 46 and 81 ms and nothing lost**. The API's own ceiling is about 32,000 per minute. But the worker finishes only about 10,500 to 11,500 notifications per minute (about 175 to 190 per second, each going to two channels): above roughly 200/s a backlog builds, and at 300/s it took 30 to 48 seconds after sending stopped to drain. So 18,000/min is the rate the API accepted, not a rate delivered in real time. The load generator shares the machine (it used about a third of one core at 300/s).
+- On a Render-free-sized CPU allocation the system finishes roughly **940 notifications per minute** (about 16 per second) in the deployed configuration (embedded Redis), and about **1,010 per minute** with a separate Redis, measured under overload. Embedding Redis therefore costs about 7% of capacity at this size (range about 2 to 10% across runs), not the 15 to 25% an earlier version of this README claimed. Latency degrades first and badly (p95 about 2 s at 1,200 per minute). Overload showed up as latency, dropped requests at the load generator and a slower drain, **never as lost or failed notifications**.
+- The crash tests in [tests/chaos.integration.test.ts](tests/chaos.integration.test.ts) and [tests/chaos-variants.integration.test.ts](tests/chaos-variants.integration.test.ts) show no loss or duplication when workers are killed mid-send or Redis restarts (see [docs/evidence/chaos/ANALYSIS.md](docs/evidence/chaos/ANALYSIS.md)). With production lock timings, recovery from a killed worker took about 61 seconds.
 
 **What it does not show.**
 - It is not a measurement of a real Render instance. The 0.1 CPU container is an emulation, Render's free instances are also throttled and may have noisy neighbours, and Postgres and Redis there are separate hosts. Expect worse numbers on Render; measure there before quoting any.
 - "5,000 notifications per minute on a free-tier instance" is **not** supported by these results. That rate needed more than the 0.1 CPU allocation.
 - The mock email channel is instant. Against a real provider, throughput is bounded by the provider's latency and rate limits (raise `WORKER_CONCURRENCY` to compensate).
-- Single run per row, 60 seconds each; no confidence intervals.
+- Three runs per row (one each for the ceiling steps), 60 seconds each; ranges are shown but there are no confidence intervals.
 
 ## Deploying
 

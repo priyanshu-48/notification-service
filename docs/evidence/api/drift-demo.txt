@@ -1,0 +1,40 @@
+# D.2 drift demo (throwaway branch tmp/drift-demo, 2026-10-07, base 8b265c5)
+
+## 1. add an undocumented route to src/app.ts
+warning: in the working copy of 'src/app.ts', LF will be replaced by CRLF the next time Git touches it
+ 1 file changed, 1 insertion(+)
+     × leaves no route undocumented 6ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  tests/openapi.test.ts > docs/openapi.yaml matches the routes the app registers > leaves no route undocumented
+AssertionError: in the app but not in the spec: expected [ 'GET /drift-demo' ] to deeply equal []
++   "GET /drift-demo",
+    105|     expect(undocumented, 'in the app but not in the spec').toEqual([]);
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 passed (9)
+
+## 2. remove a documented path from docs/openapi.yaml (GET /v1/templates)
+ 1 file changed, 48 deletions(-)
+     × leaves no route undocumented 7ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  tests/openapi.test.ts > docs/openapi.yaml matches the routes the app registers > leaves no route undocumented
+AssertionError: in the app but not in the spec: expected [ 'GET /v1/templates', …(1) ] to deeply equal []
++   "GET /v1/templates",
++   "POST /v1/templates",
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 passed (9)
+
+## 3. reverted; clean run
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+
+## 4. reverse direction: document a route the app does not have (appended 2026-10-07, base 8b265c5)
+     × gives every operation a unique id, a summary, a tag from the list and at least one response 4ms
+     × decides authentication for every operation: a key, or explicitly none 2ms
+     × documents every operation that exists 13ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: GET /v1/ghost: expected undefined to be truthy
+AssertionError: GET /v1/ghost: expected undefined to be defined
+AssertionError: documented but not in the app: expected [ 'GET /v1/ghost' ] to deeply equal []
++   "GET /v1/ghost",
+      Tests  3 failed | 6 passed (9)
+      Tests  9 passed (9)

@@ -1,0 +1,27 @@
+# D.1 API surface (commit 2198e13, 2026-10-07)
+operationIds: 22
+paths: 17
+operations by path:
+  POST /v1/notifications:
+  GET /v1/notifications:
+  GET /v1/notifications/{id}:
+  POST /v1/notifications/{id}/replay:
+  GET /v1/dead-letters:
+  PUT /v1/users/{externalUserId}:
+  DELETE /v1/users/{externalUserId}:
+  GET /v1/users/{externalUserId}/preferences:
+  PUT /v1/users/{externalUserId}/preferences:
+  GET /v1/users/{externalUserId}/inbox:
+  POST /v1/users/{externalUserId}/inbox/{id}/read:
+  POST /v1/users/{externalUserId}/stream-token:
+  GET /stream:
+  POST /v1/templates:
+  GET /v1/templates:
+  GET /v1/stats:
+  GET /v1/api-keys:
+  POST /v1/api-keys:
+  DELETE /v1/api-keys/{id}:
+  GET /health:
+  GET /ready:
+  GET /metrics:
+stream op: 412-    get: 413-      tags: [Real time] 414-      operationId: openStream 

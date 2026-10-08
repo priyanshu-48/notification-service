@@ -1,0 +1,21 @@
+
+ RUN  v5.0.3 C:/Projects/notification-service
+
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > loses nothing and duplicates nothing: 100 in flight 6991ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > loses nothing and duplicates nothing: 500 in flight 8698ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > loses nothing and duplicates nothing: killed after the first send 6895ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > loses nothing and duplicates nothing: killed after 10 sends (a second wave in… 8681ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > two workers run together and one is killed: the survivor finishes everything 7274ms
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > every worker is killed at once, then a new one starts 7219ms
+stdout | tests/chaos-variants.integration.test.ts > worker crash variants > with production timings (BullMQ default lock and stall intervals, sweeper 30 s / 60 s)
+production-timing recovery took 61 s after the kill
+
+ ✓ tests/chaos-variants.integration.test.ts > worker crash variants > with production timings (BullMQ default lock and stall intervals, sweeper 30 s / 60 s) 65151ms
+ ✓ tests/chaos-variants.integration.test.ts > Redis restart variants (no worker is killed) > Redis restarts gracefully (data saved to disk): workers reconnect and finish 11737ms
+ ✓ tests/chaos-variants.integration.test.ts > Redis restart variants (no worker is killed) > Redis restarts and LOSES all its data: the sweeper rebuilds the queue from Postgres 15436ms
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+   Start at  02:03:58
+   Duration  139.08s (tests 99%, import 1%)
+
