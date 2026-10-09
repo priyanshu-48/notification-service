@@ -1,6 +1,8 @@
-# Moving the database from Render's free Postgres to Neon (runbook, not executed)
+# Moving the database from Render's free Postgres to Neon (runbook)
 
-Why: Render's free Postgres is deleted about 30 days after creation. Neon's free tier does not expire. You have a reminder set for 25 Oct 2026.
+> **Done on 2026-10-09.** The service was recreated from the Blueprint with a Neon `DATABASE_URL`; its new address is https://notification-service-2xde.onrender.com (the old `-4pp9` address is gone). `/ready` was healthy and a test notification was delivered. Kept for reference and for repeating the move to another host.
+
+Why: Render's free Postgres is deleted about 30 days after creation. Neon's free tier does not expire.
 Everything here is done by you in your own accounts. No connection strings go in chat or in git.
 
 ## Before you start
