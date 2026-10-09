@@ -31,7 +31,8 @@ function Call($method, $path, $body = $null, $extra = @{}) {
   if ($body) { Write-Host (($body | ConvertFrom-Json | ConvertTo-Json -Depth 10 -Compress:$false)) -ForegroundColor Gray }
   $headers = @{ Authorization = "Bearer $key" } + $extra
   $req = @{ Method = $method; Uri = "$base$path"; Headers = $headers; UseBasicParsing = $true }
-  if ($body) { $req.Body = $body; $req.ContentType = 'application/json' }
+  # A POST with no body still needs a JSON content type, or the server rejects it (Windows PowerShell would send a form type).
+  if ($body) { $req.Body = $body; $req.ContentType = 'application/json' } elseif ($method -eq 'POST') { $req.Body = '{}'; $req.ContentType = 'application/json' }
   try {
     $r = Invoke-WebRequest @req
     $status = [int]$r.StatusCode; $content = $r.Content
@@ -90,5 +91,5 @@ Wait-Enter 'When you have shown it'
 
 Scene '6. Surviving a crash'
 if ($env:DEMO_NOPAUSE) { Write-Host '(skipped in no-pause mode)'; exit 0 }
-$answer = Read-Host 'Run the crash test now? It kills a worker mid-send and needs Docker (about 10 seconds) [y/N]'
-if ($answer -eq 'y') { npx vitest run tests/chaos.integration.test.ts }
+$answer = Read-Host 'Run the crash test now? It kills a worker mid-send and needs Docker (about 20 seconds) [y/N]'
+if ($answer -eq 'y') { npx vitest run tests/chaos.integration.test.ts --reporter=verbose }
