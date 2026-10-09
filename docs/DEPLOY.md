@@ -6,7 +6,7 @@
 
 **Why Postgres is external:** Render's free Postgres **expires 30 days after creation** (then a 14-day grace period before deletion). A portfolio link that dies after a month is not useful, so use a free Postgres host with no expiry. Neon is a common choice; Supabase and Aiven also have free tiers with different limits. Free-tier terms change, so check the current limits and pick the one that fits.
 
-> Verified so far: the Docker image (with embedded Redis) runs against a fresh database, and an earlier version of this Blueprint (with Render's own Postgres) deployed on Render and delivered a notification end to end. The external-Postgres variant of the Blueprint has not been deployed yet.
+> Verified: the external-Postgres variant of this Blueprint is deployed on Render against a free Neon database, and delivered a test notification end to end (2026-10-09). The earlier version with Render's own Postgres also worked.
 
 ## Steps
 

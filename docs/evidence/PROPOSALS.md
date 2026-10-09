@@ -39,10 +39,10 @@ The script is `scripts/evidence/send-real-emails.mjs`. It is syntax-checked only
 
 ## F.2 Measure the live Render instance (safe rate)
 The free tier is small, so use 2 per second for 60 s and a fresh tenant. Create a tenant on the live database first (see `docs/DEPLOY.md`), then set `API_KEY` yourself.
-- Check readiness: `curl.exe https://notification-service-4pp9.onrender.com/ready`
+- Check readiness: `curl.exe https://notification-service-2xde.onrender.com/ready`
 - Warm the service first (the first request after idle can take tens of seconds).
 - Run the committed k6 script from the repo root:
-  `docker run --rm -i -e API_KEY=$env:API_KEY -e BASE_URL=https://notification-service-4pp9.onrender.com -e RATE=2 -e DURATION=60s -v "${PWD}/loadtest:/loadtest" grafana/k6 run /loadtest/notifications.js`
+  `docker run --rm -i -e API_KEY=$env:API_KEY -e BASE_URL=https://notification-service-2xde.onrender.com -e RATE=2 -e DURATION=60s -v "${PWD}/loadtest:/loadtest" grafana/k6 run /loadtest/notifications.js`
 
 The default limit of 600/min is above 2/s, so 429s are not expected. The result measures accepted rate, API p95 (including your internet round trip) and drain time. Save the output under `docs/evidence/live/`.
 

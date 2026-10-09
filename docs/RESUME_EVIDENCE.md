@@ -43,7 +43,7 @@ Do not write "exactly-once" or "zero duplicates". The honest wording is "no dupl
 
 If you cannot use branch-only numbers yet, write "86 tests (79.8% line coverage; 8 suites on real PostgreSQL, 5 also on Redis)". Do **not** write "18,000/min delivered".
 
-**Stack line** (all verified in the repo): TypeScript, Node.js, Fastify, PostgreSQL, Redis, BullMQ, WebSockets, React, Docker, Render, Vitest, k6. Safe additions: Testcontainers, GitHub Actions, Drizzle ORM, Zod, OpenAPI. Caveat: Render is a free-tier deployment whose database expires in early November unless migrated (`docs/NEON_MIGRATION.md`).
+**Stack line** (all verified in the repo): TypeScript, Node.js, Fastify, PostgreSQL, Redis, BullMQ, WebSockets, React, Docker, Render, Vitest, k6. Safe additions: Testcontainers, GitHub Actions, Drizzle ORM, Zod, OpenAPI. Caveat: Render is a free-tier deployment (it sleeps when idle, so the first request takes 30+ seconds); the database was moved to Neon's free Postgres, which does not expire (`docs/NEON_MIGRATION.md`).
 
 ## 3. Claims that could not be backed, with weaker true wording
 
@@ -73,5 +73,5 @@ If you cannot use branch-only numbers yet, write "86 tests (79.8% line coverage;
 4. What are the real numbers on the live Render instance (low-rate k6 command in `PROPOSALS.md`)?
 5. Hours spent and what you directed versus what the AI assistant generated. Be ready for this in interviews; `docs/INTERVIEW_NOTES.md` covers the mechanisms.
 6. Do you want a public demo (needs key scopes and per-tenant limits, a code change) or a recording in the README?
-7. Do you want the coverage step added to CI (`PROPOSALS.md` E.2) and a Neon migration done before November?
+7. Do you want the coverage step added to CI (`PROPOSALS.md` E.2)? (The Neon migration is done; the live service is at https://notification-service-2xde.onrender.com.)
 8. Is the untracked `RESUME_EXPORT_notification_service.md` yours? I left it alone. It is not part of this branch.
