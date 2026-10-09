@@ -139,6 +139,10 @@ A React dashboard (overview counts, notification log with per-attempt detail and
 
 `tests/chaos.integration.test.ts` kills a real worker process mid-send with 20 notifications in flight and asserts all 20 are delivered, none lost, none sent twice.
 
+## Demo script
+
+[scripts/demo/demo.ps1](scripts/demo/demo.ps1) walks through the service for a screen recording: register a user, open a live stream, send a notification, retry it safely with an `Idempotency-Key`, see a reused key rejected, and read an inbox that filled while the user was offline. It prints every request and the real response, and waits for Enter between scenes. Start the service locally (`RUN_WORKER=true npm run dev`), set `$env:API_KEY` to the key from `npm run provision:tenant`, then run `powershell -ExecutionPolicy Bypass -File scripts/demo/demo.ps1`.
+
 ## Benchmarks
 
 What was measured, how, and what it does **not** show. The k6 script is [loadtest/notifications.js](loadtest/notifications.js) and the whole procedure is [loadtest/run-local.sh](loadtest/run-local.sh), so every number below can be reproduced.
