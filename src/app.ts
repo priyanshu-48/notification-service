@@ -104,9 +104,8 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
     if (error instanceof ZodError) {
       return reply.code(400).send({ error: { code: 'VALIDATION_ERROR', message: 'Request validation failed.', details: error.issues.map(({ path, message }) => ({ path, message })) } });
     }
-    if (isBadRequestError(error)) {
-      return reply.code(400).send({ error: { code: 'BAD_REQUEST', message: 'The request could not be parsed.' } });
-    }
+    const clientError = clientErrorOf(error);
+    if (clientError) return reply.code(clientError.status).send({ error: { code: clientError.code, message: clientError.message } });
     requestSafeLog(app, error);
     return reply.code(500).send({ error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' } });
   });
@@ -289,8 +288,18 @@ export function buildApp(db: Database, queue: NotificationQueue, { stream, rateL
   return app;
 }
 
-function isBadRequestError(error: unknown): error is { statusCode: 400 } {
-  return typeof error === 'object' && error !== null && 'statusCode' in error && error.statusCode === 400;
+// Fastify raises its own client errors for a body it cannot parse (400), a body over the size limit (413) and a content type it has
+// no parser for (415). They carry a 4xx statusCode: pass that on instead of reporting them as a server error.
+const clientErrors: Record<number, { code: string; message: string }> = {
+  400: { code: 'BAD_REQUEST', message: 'The request could not be parsed.' },
+  413: { code: 'PAYLOAD_TOO_LARGE', message: 'The request body is too large.' },
+  415: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Send the body as application/json.' },
+};
+
+function clientErrorOf(error: unknown): { status: number; code: string; message: string } | null {
+  const status = typeof error === 'object' && error !== null && 'statusCode' in error ? error.statusCode : undefined;
+  if (typeof status !== 'number' || status < 400 || status > 499) return null;
+  return { status, ...(clientErrors[status] ?? { code: 'BAD_REQUEST', message: 'The request could not be processed.' }) };
 }
 
 function requestSafeLog(app: FastifyInstance, error: unknown): void {

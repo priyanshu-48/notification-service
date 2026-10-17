@@ -14,7 +14,9 @@ info:
 
     ## Errors
     Every error is `{ "error": { "code": "...", "message": "..." } }`. Validation failures (`400 VALIDATION_ERROR`) also carry
-    `details`, a list of `{ path, message }`. Branch on `code`, not on `message`.
+    `details`, a list of `{ path, message }`. A body over the size limit is `413 PAYLOAD_TOO_LARGE` and a content type other than
+    `application/json` is `415 UNSUPPORTED_MEDIA_TYPE` (a `POST` without a body should send no `Content-Type` at all, or `{}` as `application/json`).
+    Branch on `code`, not on `message`.
 
     ## Delivery guarantee
     At-least-once processing with deduplication, so a recipient sees each notification once. Send an `Idempotency-Key` header

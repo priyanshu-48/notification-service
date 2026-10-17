@@ -61,3 +61,32 @@ describe('POST /v1/notifications', () => {
     await app.close();
   });
 });
+
+// Fastify's own client errors (wrong content type, body too large) used to come back as a generic 500.
+describe('client errors from the HTTP layer', () => {
+  const send = async (options: Record<string, unknown>) => {
+    const { db } = fakeDb();
+    const app = buildApp(db, { add: vi.fn().mockResolvedValue({}) });
+    const response = await app.inject({ method: 'POST', url: '/v1/notifications', headers: { authorization: `Bearer ${apiKey}` }, ...options } as never);
+    await app.close();
+    return response;
+  };
+
+  it('answers 415 for a content type the API does not accept', async () => {
+    const response = await send({ headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/x-www-form-urlencoded' }, payload: 'a=b' });
+    expect(response.statusCode).toBe(415);
+    expect(response.json()).toEqual({ error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'Send the body as application/json.' } });
+  });
+
+  it('answers 413 for a body over the size limit', async () => {
+    const response = await send({ headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' }, payload: JSON.stringify({ blob: 'x'.repeat(1_100_000) }) });
+    expect(response.statusCode).toBe(413);
+    expect(response.json()).toMatchObject({ error: { code: 'PAYLOAD_TOO_LARGE' } });
+  });
+
+  it('still answers 400 for malformed JSON', async () => {
+    const response = await send({ headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' }, payload: '{not json' });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: { code: 'BAD_REQUEST', message: 'The request could not be parsed.' } });
+  });
+});
