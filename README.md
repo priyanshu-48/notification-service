@@ -2,6 +2,10 @@
 
 A small, self-hostable notification service in the spirit of Knock or OneSignal. Other apps call its API to notify their users over **email** and **in-app real-time (WebSocket)**, with a durable inbox, retries and a dead-letter set, idempotency, per-tenant rate limiting, user preferences (opt-outs, quiet hours), digests, and a dashboard. Built with Node.js, TypeScript, Fastify, PostgreSQL, Redis and BullMQ.
 
+![A notification arrives live in the browser, then the operator dashboard shows its delivery attempts](docs/assets/demo.gif)
+
+*Real UI, local run with a mock email provider: an API call reaches the user's browser over WebSocket, and the dashboard records every channel and attempt.*
+
 ## Architecture
 
 ```mermaid
