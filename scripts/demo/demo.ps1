@@ -91,5 +91,7 @@ Wait-Enter 'When you have shown it'
 
 Scene '6. Surviving a crash'
 if ($env:DEMO_NOPAUSE) { Write-Host '(skipped in no-pause mode)'; exit 0 }
-$answer = Read-Host 'Run the crash test now? It kills a worker mid-send and needs Docker (about 20 seconds) [y/N]'
-if ($answer -eq 'y') { npx vitest run tests/chaos.integration.test.ts --reporter=verbose }
+# Drop any Enter presses typed ahead during earlier scenes, or one would answer this prompt for you.
+try { while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) } } catch { }
+$answer = Read-Host 'Run the crash test now? It kills a worker mid-send and needs Docker (about 20 seconds) [Y/n]'
+if ($answer -notmatch '^n') { npx vitest run tests/chaos.integration.test.ts --reporter=verbose }
