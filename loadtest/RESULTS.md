@@ -25,7 +25,7 @@ Measured 2026-10-07/08 with `loadtest/run-local.sh` and `loadtest/notifications.
 
 Ceiling search (uncapped, **single run each**): 400/s accepted 23,934 of 24,000 (66 dropped by k6), p95 140 ms; 500/s 29,786 of 30,000, p95 440 ms; 600/s 32,145 of 36,000, p95 1.01 s; 800/s 31,982 of 48,000, p95 1.03 s. All accepted notifications were delivered. First dropped requests: 400/s. p95 passes the script's 500 ms threshold between 500/s and 600/s. The API's acceptance plateaus near 32,000/min.
 
-Sustained delivery: completed per minute across the whole run was 11,154 / 10,857 / 10,718 / 10,526 at 400 / 500 / 600 / 800/s, and 11,332-11,999 at 300/s. So the worker drains about 175-190 notifications per second (each to two channels) on this machine. Above about 200/s the queue grows; at 300/s it took about 30-48 s after the 60 s of sending to empty.
+Sustained delivery: completed per minute across the whole run was 11,154 / 10,857 / 10,718 / 10,526 at 400 / 500 / 600 / 800/s, and 9,993-11,999 at 300/s (11,332-11,999 in the three runs with the CPU sampler, 9,993-10,281 in the three later runs without it; completed divided by total run seconds). So the worker drains about 165-200 notifications per second, about 10,000-12,000 per minute (each to two channels) on this machine. Above about 200/s the queue grows; at 300/s it took about 30-48 s after the 60 s of sending to empty.
 
 Capped capacity under overload (e2e per minute at 40/s): embedded **943** (918-951), separate **1,010** (967-1,017). Embedded Redis therefore costs about **7%** (about 2-10% from the extremes) at saturation. At 20/s (still under capacity) the figures were 818 vs 860, about 5%.
 
@@ -34,7 +34,7 @@ Capped capacity under overload (e2e per minute at 40/s): embedded **943** (918-9
 
 ## Things not to over-read
 1. Latency varied run to run: 300/s p95 was 45.6-55.3 ms in the first three runs and 67.5-81.3 ms in the later three without the sampler. An earlier single run reported 24 ms; **it was not reproduced**. Quote a range, not 24 ms.
-2. **18,000/min is the accepted rate, not the delivered rate.** Sustained delivery is about 10,500-11,500/min on this machine.
+2. **18,000/min is the accepted rate, not the delivered rate.** Sustained delivery is about 10,000-12,000/min on this machine.
 3. All ceiling figures are single runs.
 4. Mock email channel (instant), Postgres on the same machine, no network between k6 and the API beyond Docker's. A real provider would bound throughput instead.
 5. A laptop under Docker Desktop is not Render. These numbers are not predictions for the deployed service.
